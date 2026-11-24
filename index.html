@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Ground is a considered marketplace for the things that make daily life better." />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <title>Store - Objects with a point of view</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="styles.css?v=20261124-brand-theme-1" />
+</head>
+
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="#top" aria-label="Store home"><span class="wordmark-mark">S</span> Store</a>
+    <nav class="main-nav" aria-label="Main navigation">
+      <a class="active" href="#shop">Shop</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-button" id="searchToggle" aria-label="Search"><span class="search-icon"></span></button>
+      <button class="icon-button wishlist-header" id="wishlistToggle" aria-label="Open wishlist">♡<span
+          id="wishlistCount">0</span></button>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle color theme">☀</button>
+      <div class="account-menu"><button class="account-button" id="accountToggle"><span class="account-avatar"
+            id="accountAvatar" aria-hidden="true"></span><span id="accountName">Client login</span><span
+            class="account-chevron">⌄</span></button>
+        <div class="account-dropdown" id="accountDropdown" hidden>
+          <p id="accountDropdownName">Account</p><button type="button" id="headerProfile">Profile</button><button
+            type="button" id="headerOrders">Orders</button><button type="button" id="headerKyc">Staff KYC</button><a
+            href="admin.html" id="headerAdminDashboard" hidden>Admin dashboard <span>↗</span></a><button type="button"
+            id="headerSaved">Saved pieces</button><a href="#shop" id="headerShop">Continue shopping</a><button
+            type="button" id="headerAccountLogout">Log out</button>
+        </div>
+      </div><a class="admin-access" id="adminAccess" href="admin.html">Admin login <span>↗</span></a>
+      <button class="bag-button cart-button" id="cartToggle" aria-label="Open cart"><svg class="cart-icon"
+          aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="20" r="1"></circle>
+          <circle cx="19" cy="20" r="1"></circle>
+          <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 1.9-1.4L22 8H6"></path>
+        </svg><span id="cartCount">0</span></button>
+    </div>
+  </header>
+
+  <div id="appPage" class="app-page" hidden></div>
+  <main id="top">
+    <section class="hero" id="shop" aria-labelledby="hero-title">
+      <div class="hero-copy" id="featuredHeroCopy">
+        <p class="eyebrow">Featured products</p>
+        <h1 id="hero-title">Your next<br><em>favorite thing.</em></h1>
+        <p class="hero-description">Products selected by the Ground team.</p>
+      </div>
+      <div class="hero-image-wrap" id="featuredHeroImage">
+        <div class="hero-empty">Featured products will appear here when the admin selects them.</div>
+      </div>
+    </section>
+
+    <section class="shop-section" id="catalog">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Curated essentials</p>
+          <h2>Find your next<br><em>favorite thing.</em></h2>
+        </div>
+        <p class="section-intro">Small makers, enduring materials, and design that earns its place in your home.</p>
+      </div>
+      <div class="shop-toolbar">
+        <div class="category-tabs" id="categoryTabs" role="tablist" aria-label="Product categories"><button
+            class="category-tab active" data-category="All">All products</button></div>
+        <div class="catalog-search-row">
+          <form class="catalog-search" id="catalogSearch"><span class="search-icon" aria-hidden="true"></span><input
+              id="catalogSearchInput" type="search" placeholder="Search products by name" aria-label="Search products">
+          </form><label class="sort-control">Sort by <select id="sortSelect">
+              <option value="featured">Featured</option>
+              <option value="price-low">Price: low to high</option>
+              <option value="price-high">Price: high to low</option>
+              <option value="rating">Top rated</option>
+            </select></label>
+        </div>
+      </div>
+      <p class="store-closed" id="storeClosed" hidden>The store is taking a short pause. Please check back soon.</p>
+      <div class="product-grid" id="productGrid"></div>
+      <p class="empty-state" id="emptyState" hidden>No pieces match that search.</p>
+    </section>
+
+    <section class="top-products-section" aria-labelledby="top-products-title">
+      <div class="compact-section-heading">
+        <h2 id="top-products-title">Featured products</h2>
+        <div class="carousel-controls"><button type="button" id="featuredPrevious"
+            aria-label="Previous featured products">←</button><button type="button" id="featuredNext"
+            aria-label="Next featured products">→</button></div>
+      </div>
+      <div class="top-products-grid" id="featuredProductCarousel">
+        <p class="category-loading">Loading featured products...</p>
+      </div>
+    </section>
+    <section class="category-tiles-section" aria-labelledby="category-tiles-title">
+      <h2 id="category-tiles-title">Shop by category</h2>
+      <div class="category-tiles" id="categoryTiles">
+        <p class="category-loading">Loading categories...</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div><a class="wordmark" id="footerWordmark" href="#shop" aria-label="Store home"><span class="wordmark-mark"
+          id="footerWordmarkMark">S</span><span id="footerWordmarkName">Store</span></a>
+      <p>Objects with a point of view.</p>
+    </div>
+    <div><strong>Explore</strong><a href="#shop">Shop</a><a href="#about">About</a><a href="#contact">Contact</a></div>
+    <div><strong>Support</strong><a href="#orders">Order tracking</a><a href="#contact">Customer care</a><a
+        href="mailto:hello@ground.example">Email us</a></div>
+    <p class="footer-note">© 2026 Ground. Considered things for everyday living.</p>
+  </footer>
+
+  <aside class="cart-drawer" id="cartDrawer" aria-label="Shopping bag" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Your bag <span id="drawerCount">(0)</span></h2><button class="close-button" id="cartClose"
+        aria-label="Close bag">×</button>
+    </div>
+    <div class="cart-items" id="cartItems"></div>
+    <div class="cart-footer">
+      <div class="subtotal"><span>Subtotal</span><strong id="subtotal">$0</strong></div>
+      <p>Shipping calculated at checkout.</p><button class="checkout-button" id="checkoutButton">Continue to checkout
+        <span>↗</span></button>
+    </div>
+  </aside>
+  <aside class="cart-drawer wishlist-drawer" id="wishlistDrawer" aria-label="Wishlist" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Saved pieces <span id="wishlistDrawerCount">(0)</span></h2><button class="close-button" id="wishlistClose"
+        aria-label="Close wishlist">×</button>
+    </div>
+    <div class="wishlist-items" id="wishlistItems"></div>
+  </aside>
+  <div class="overlay" id="overlay"></div>
+  <form class="search-bar" id="searchBar"><input id="searchInput" type="search" placeholder="Search the collection..."
+      aria-label="Search products"><button id="searchSubmit" type="submit"
+      aria-label="Search products">↗</button><button id="searchClose" type="button" aria-label="Close search">×</button>
+  </form>
+  <div class="product-modal" id="productModal" aria-hidden="true" role="dialog" aria-modal="true"
+    aria-label="Product details">
+    <button class="modal-close" id="modalClose" aria-label="Close product details">×</button>
+    <div class="modal-gallery">
+      <div class="modal-image"><button class="gallery-arrow gallery-prev" id="modalPrev" data-gallery-direction="-1"
+          aria-label="Previous product image">‹</button><img id="modalImage" src="" alt=""><button
+          class="gallery-arrow gallery-next" id="modalNext" data-gallery-direction="1"
+          aria-label="Next product image">›</button><button class="zoom-button" id="modalZoom"
+          aria-label="Zoom product image">⌕</button></div>
+      <div class="modal-thumbnails" id="modalThumbnails" aria-label="Product images"></div>
+    </div>
+    <div class="modal-copy">
+      <p class="eyebrow" id="modalCategory"></p>
+      <h2 id="modalName"></h2>
+      <div class="modal-rating" id="modalRating"></div>
+      <p class="modal-description">A quietly considered piece made for daily use. Thoughtful materials, enduring form,
+        and the details that make a good object feel like yours.</p>
+      <div class="modal-detail-grid">
+        <section id="modalUsageSection">
+          <h3>How to use</h3>
+          <p id="modalUsage"></p>
+        </section>
+        <section id="modalFeaturesSection">
+          <h3>Key features</h3>
+          <ul id="modalFeatures"></ul>
+        </section>
+      </div>
+      <div class="modal-purchase"><strong id="modalPrice"></strong>
+        <div class="modal-quantity"><button id="modalMinus" aria-label="Decrease quantity">−</button><span
+            id="modalQuantity">1</span><button id="modalPlus" aria-label="Increase quantity">+</button></div>
+      </div><button class="modal-add" id="modalAdd">Add to bag <span>↗</span></button><button class="modal-wishlist"
+        id="modalWishlist">♡ Add to wishlist</button>
+      <section class="modal-reviews" id="modalReviews"></section>
+    </div>
+  </div>
+  <div class="checkout-modal" id="checkoutModal" aria-hidden="true" role="dialog" aria-modal="true"
+    aria-label="Checkout">
+    <div class="checkout-header">
+      <div>
+        <p class="eyebrow">Ground checkout</p>
+        <h2>Make it yours.</h2>
+      </div><button class="modal-close" id="checkoutClose" aria-label="Close checkout">×</button>
+    </div>
+    <div class="checkout-steps"><span class="active" data-step-label="1">Details</span><span
+        data-step-label="2">Delivery</span><span data-step-label="3">Payment</span></div>
+    <form id="checkoutForm" novalidate>
+      <section class="checkout-step active" data-step="1">
+        <h3>Your details</h3>
+        <div class="field-grid"><label>First name<input name="firstName" required
+              autocomplete="given-name"></label><label>Last name<input name="lastName" required
+              autocomplete="family-name"></label></div><label>Email address<input type="email" name="email" required
+            autocomplete="email"></label><label>Phone<input type="tel" name="phone" required
+            autocomplete="tel"></label><button class="checkout-next" type="submit">Continue to delivery
+          <span>↗</span></button>
+      </section>
+      <section class="checkout-step" data-step="2">
+        <h3>Where should we send it?</h3><label>Address<input name="address" required
+            autocomplete="street-address"></label>
+        <div class="field-grid"><label>City<input name="city" required autocomplete="address-level2"></label><label>GPS
+            address / landmark <small>(optional)</small><input name="gpsAddress" autocomplete="street-address"></label>
+        </div><label>Country<select name="country" id="shippingCountry" required>
+            <option value="" selected disabled>Choose a country</option>
+            <option value="US">United States</option>
+            <option value="GH">Ghana</option>
+            <option value="GB">United Kingdom</option>
+          </select></label>
+        <div class="delivery-option" id="deliveryOptions"><span><strong>Choose delivery</strong><small>Enter your
+              destination to see available methods.</small></span><b>$0</b></div><button class="checkout-next"
+          type="submit">Continue to payment <span>↗</span></button>
+      </section>
+      <section class="checkout-step" data-step="3">
+        <h3>Payment method</h3>
+        <div class="payment-option active"><span class="payment-dot"></span><span><strong>Secure provider
+              checkout</strong><small id="paymentHelp">You will be redirected to complete payment
+              securely.</small></span><select name="provider" id="paymentProvider" aria-label="Payment provider"></select></div>
+        <p class="payment-note">Your card or mobile money details are entered only on the selected provider's secure
+          checkout.</p><button class="checkout-next" type="submit">Place order <span>↗</span></button>
+      </section>
+      <section class="checkout-step checkout-success" data-step="4">
+        <div class="success-mark">✓</div>
+        <p class="eyebrow">Order confirmed</p>
+        <h3>Thank you for choosing well.</h3>
+        <p>Your order <strong id="orderNumber">#GR-00000</strong> is being prepared. We’ll send the details to your
+          inbox.</p><button type="button" class="checkout-next" id="receiptButton">Download receipt
+          <span>↓</span></button><button type="button" class="modal-wishlist" id="doneButton">Back to shopping
+          <span>↗</span></button>
+      </section>
+    </form>
+    <div class="checkout-coupon"><label>Coupon code<input name="couponCode" placeholder="WELCOME10"
+          autocomplete="off"></label><button type="button" class="page-secondary" data-apply-coupon>Apply</button><small
+        data-coupon-message></small></div>
+    <div class="checkout-summary-lines"><span>Discount <b id="checkoutDiscount">-$0.00</b></span><span>Tax <b
+          id="checkoutTax">$0.00</b></span></div>
+    <div class="checkout-total"><span>Total</span><strong id="checkoutTotal">$0</strong></div>
+  </div>
+  <div class="account-modal" id="accountModal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Account">
+    <button class="modal-close" id="accountClose" aria-label="Close account">×</button>
+    <div class="account-shell">
+      <div class="account-visual">
+        <p class="eyebrow accent">Ground / account</p>
+        <h2>Everything you need.</h2>
+        <p>Sign in to continue.</p>
+        <div class="account-visual-meta"><span aria-label="Secure access">⌾</span><span
+            aria-label="Fast checkout">↗</span></div>
+      </div>
+      <div class="account-form-wrap">
+        <div class="account-heading">
+          <p class="eyebrow">Account</p>
+          <h2 id="accountTitle">Welcome back.</h2>
+          <p id="accountSubtitle">Sign in to continue.</p>
+        </div>
+        <form id="accountForm">
+          <div class="account-tabs"><button type="button" class="auth-tab active" data-auth-tab="login"><span
+                aria-hidden="true"><i class="fa-solid fa-arrow-right-to-bracket"></i></span> Sign in</button><button
+              type="button" class="auth-tab" data-auth-tab="register"><span aria-hidden="true"><i
+                  class="fa-solid fa-user-plus"></i></span> Create account</button></div>
+          <div class="account-name-fields" hidden><label><span class="field-icon" aria-hidden="true"><i
+                  class="fa-solid fa-user"></i></span> First
+              name<input name="firstName" autocomplete="given-name"></label><label><span class="field-icon"
+                aria-hidden="true"><i class="fa-solid fa-user"></i></span> Last name<input name="lastName"
+                autocomplete="family-name"></label></div>
+          <label><span class="field-icon" aria-hidden="true"><i class="fa-solid fa-envelope"></i></span> Email<input
+              name="email" type="email" autocomplete="email" required></label><label class="password-field-shell"><span
+              class="field-icon" aria-hidden="true"><i class="fa-solid fa-lock"></i></span> Password<div
+              class="password-field"><input id="accountPasswordInput" name="password" type="password" minlength="8"
+                autocomplete="current-password" required><button type="button" id="accountPasswordToggle"
+                class="field-toggle" aria-label="Show password"><i class="fa-solid fa-eye"></i></button>
+            </div></label><button class="modal-add" type="submit" id="accountSubmit">Sign in <span><i
+                class="fa-solid fa-arrow-up-right-from-square"></i></span></button>
+          <p class="account-error" id="accountError"></p>
+        </form><button class="account-switch" id="accountSwitch">Create account <span
+            aria-hidden="true">＋</span></button>
+        <div class="account-session" id="accountSession" hidden>
+          <div class="account-session-heading">
+            <div>
+              <p class="eyebrow">Client area</p>
+              <h3 id="accountGreeting">Your account</h3>
+              <p>Signed in as <strong id="accountEmail"></strong></p>
+            </div><button class="account-logout" id="accountLogout" type="button">Sign out <span>↪</span></button>
+          </div>
+          <div class="client-stats">
+            <div><strong id="accountOrderCount">0</strong><small>Orders</small></div>
+            <div><strong id="accountSavedCount">0</strong><small>Saved pieces</small></div>
+            <div><strong id="accountAddressCount">0</strong><small>Addresses</small></div>
+          </div>
+          <div class="account-orders">
+            <div class="account-section-heading">
+              <h3>Recent orders</h3><span>Latest activity</span>
+            </div>
+            <div id="accountOrders">
+              <p class="account-muted">Loading your orders...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notification-modal" id="notificationModal" aria-hidden="true" role="dialog" aria-modal="true"
+    aria-labelledby="notificationModalTitle">
+    <header class="notification-modal-header">
+      <div>
+        <p class="eyebrow">Your inbox</p>
+        <h2 id="notificationModalTitle">Notifications</h2>
+        <p>Order updates and account activity, all in one place.</p>
+      </div><button class="modal-close" id="notificationClose" aria-label="Close notifications">×</button>
+    </header>
+    <div class="notification-modal-list" id="notificationModalList">
+      <p class="account-muted">Loading notifications...</p>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <button class="chat-launcher" id="chatLauncher" aria-label="Open support chat">Chat <span>↗</span></button>
+  <aside class="chat-panel" id="chatPanel" aria-label="Support chat" aria-hidden="true">
+    <div class="chat-header">
+      <div>
+        <p class="eyebrow">Ground support</p>
+        <h2>How can we help?</h2>
+      </div>
+      <div class="chat-header-actions"><button class="chat-sound-toggle" id="chatSoundToggle" type="button"
+          aria-label="Mute chat sounds" title="Mute chat sounds"><i class="fa-solid fa-volume-high"
+            aria-hidden="true"></i></button><button class="close-button" id="chatClose"
+          aria-label="Close support chat">×</button></div>
+    </div>
+    <section class="chat-support-tools" aria-label="Support options">
+      <div class="chat-staff-status" id="chatStaffStatus"><i class="fa-solid fa-circle-notch fa-spin"
+          aria-hidden="true"></i><span>Checking staff availability...</span></div>
+      <div class="chat-ai-heading"><strong><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> AI
+          assistant</strong><small>Ask about products, orders, delivery, or returns.</small></div>
+      <div class="chat-query-list" id="chatQueryList" aria-label="Suggested questions"><button type="button"
+          data-chat-query="Where is my order?">Where is my order?</button><button type="button"
+          data-chat-query="How does delivery work?">Delivery options</button><button type="button"
+          data-chat-query="I need a return or refund">Returns and refunds</button></div>
+      <button type="button" class="chat-escalate-button" id="chatEscalateButton" hidden><i
+          class="fa-solid fa-user-headset" aria-hidden="true"></i> Ask staff to join</button>
+    </section>
+    <div class="chat-messages" id="chatMessages">
+      <p class="account-muted">Sign in to start a conversation.</p>
+    </div>
+    <form class="chat-form" id="chatForm"><input name="body" placeholder="Write a message..." aria-label="Chat message"
+        required maxlength="2000"><button type="submit" aria-label="Send message">↗</button></form>
+  </aside>
+  <link rel="stylesheet" href="node_modules/sweetalert2/dist/sweetalert2.min.css">
+  <script src="node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
+  <script src="runtime-config.js?v=20260911"></script>
+  <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
+  <script src="app.js?v=20261124-brand-theme-1"></script>
+</body>
+
+</html>

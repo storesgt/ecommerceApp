@@ -1,0 +1,53 @@
+services:
+  api:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      PORT: ${PORT:-4000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4000}
+      APP_URL: ${APP_URL:-http://localhost:4000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Ground <no-reply@example.com>}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      HUBTEL_WEBHOOK_SECRET: ${HUBTEL_WEBHOOK_SECRET:-}
+      MPESA_WEBHOOK_SECRET: ${MPESA_WEBHOOK_SECRET:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL must be set in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:?ADMIN_FIRST_NAME must be set in .env}
+      ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:?ADMIN_LAST_NAME must be set in .env}
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ground-uploads:/app/uploads
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-ground}
+      MYSQL_USER: ${DB_USER:-ground}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -u root -p"$${MYSQL_ROOT_PASSWORD}" --silent
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    volumes:
+      - ground-mysql:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  ground-mysql:
+  ground-uploads:

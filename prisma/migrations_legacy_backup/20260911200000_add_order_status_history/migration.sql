@@ -1,0 +1,1 @@
+-- Migration intentionally contains no SQL; this duplicate migration is retained for history compatibility.

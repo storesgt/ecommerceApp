@@ -1,0 +1,1 @@
+-- Migration intentionally contains no SQL; the order status history change is represented by the following migration.

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+.prisma/
+uploads/*
+!uploads/.gitkeep

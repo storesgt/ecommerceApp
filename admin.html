@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Operations</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="admin.css?v=20261124-brand-theme-1" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+</head>
+
+<body>
+    <aside class="admin-sidebar">
+        <div class="sidebar-top"><a class="admin-brand"
+                href="index.html"><span>S</span><strong>Store</strong><small>Operations</small></a><button
+                class="sidebar-toggle" id="sidebarToggle" aria-label="Collapse sidebar">‹</button></div>
+        <p class="sidebar-label">Workspace</p>
+        <nav><a class="active" href="#dashboard"><span><i class="fa-solid fa-chart-line"></i></span><b
+                    class="nav-text">Overview</b></a><a href="#orders"><span><i
+                        class="fa-solid fa-receipt"></i></span><b class="nav-text">Orders</b><em
+                    id="orderCount">0</em></a><a href="#inventory"><span><i
+                        class="fa-solid fa-boxes-stacked"></i></span><b class="nav-text">Inventory</b></a><a
+                href="#customers"><span><i class="fa-solid fa-users"></i></span><b class="nav-text">Customers</b></a><a
+                href="#performance"><span><i class="fa-solid fa-chart-column"></i></span><b
+                    class="nav-text">Performance</b></a>
+        </nav>
+        <p class="sidebar-label">Manage</p>
+        <nav><a href="#products"><span><i class="fa-solid fa-cubes"></i></span><b class="nav-text">Products</b></a><a
+                href="#promotions"><span><i class="fa-solid fa-tags"></i></span><b class="nav-text">Promotions</b></a><a
+                href="#categories"><span><i class="fa-solid fa-layer-group"></i></span><b
+                    class="nav-text">Categories</b></a><a href="#adminChat"><span><i
+                        class="fa-solid fa-comments"></i></span><b class="nav-text">Chat</b></a><a
+                href="#adminReturns"><span><i class="fa-solid fa-rotate-left"></i></span><b
+                    class="nav-text">Returns</b></a><a href="#settings"><span><i class="fa-solid fa-gear"></i></span><b
+                    class="nav-text">Settings</b></a><a href="index.html"><span><i
+                        class="fa-solid fa-arrow-up-right-from-square"></i></span><b class="nav-text">Client
+                    area</b></a></nav>
+        <div class="sidebar-bottom">
+            <div class="avatar">AS</div>
+            <div class="nav-text"><strong id="adminUserName">Alex Stone</strong><small
+                    id="adminUserRole">Administrator</small></div><button id="adminLogout" aria-label="Sign out"><i
+                    class="fa-solid fa-right-from-bracket"></i></button>
+        </div>
+    </aside>
+    <main class="admin-main" id="dashboard">
+        <header class="admin-header">
+            <div>
+                <p class="eyebrow" id="adminDate">Wednesday, September 09, 2026</p>
+                <h1 id="adminGreeting">Good morning, Alex.</h1>
+            </div>
+            <div class="admin-actions"><button class="ghost-button" id="adminAlerts" aria-label="View alerts"
+                    title="Alerts"><i class="fa-solid fa-bell"></i><span>Alerts</span><em
+                        id="adminAlertCount"></em></button><button class="theme-toggle" type="button" data-theme-toggle
+                    aria-label="Toggle color theme" title="Toggle theme">☀</button><button class="ghost-button"
+                    id="headerLogout" aria-label="Log out" title="Log out"><i
+                        class="fa-solid fa-right-from-bracket"></i><span>Logout</span></button><button
+                    class="primary-button" id="addProduct" title="Add product"><i class="fa-solid fa-plus"></i><span>Add
+                        product</span></button></div>
+        </header>
+        <section class="metric-grid">
+            <article class="metric-card accent"><i class="metric-icon fa-solid fa-wallet" aria-hidden="true"></i>
+                <p>Total revenue <span>Period</span></p><strong id="dashboardRevenue">$0.00</strong><small
+                    id="dashboardRevenueNote">Loading revenue</small>
+            </article>
+            <article class="metric-card"><i class="metric-icon fa-solid fa-receipt" aria-hidden="true"></i>
+                <p>Orders <span>Period</span></p><strong id="dashboardOrders">0</strong><small
+                    id="dashboardOrdersNote">Loading
+                    orders</small>
+            </article>
+            <article class="metric-card"><i class="metric-icon fa-solid fa-users" aria-hidden="true"></i>
+                <p>Customers <span>Period</span></p><strong id="dashboardCustomers">0</strong><small
+                    id="dashboardCustomersNote">Loading customers</small>
+            </article>
+            <article class="metric-card"><i class="metric-icon fa-solid fa-chart-line" aria-hidden="true"></i>
+                <p>Average order <span>Period</span></p><strong id="dashboardAverage">$0.00</strong><small>Across
+                    completed and
+                    active orders</small>
+            </article>
+            <article class="metric-card"><i class="metric-icon fa-solid fa-circle-check" aria-hidden="true"></i>
+                <p>Completed orders</p><strong id="dashboardCompleted">0</strong><small
+                    id="dashboardCompletedNote">Delivered in
+                    period</small>
+            </article>
+            <article class="metric-card"><i class="metric-icon fa-solid fa-box-open" aria-hidden="true"></i>
+                <p>Low stock products</p><strong id="dashboardLowStock">0</strong><small id="dashboardStockNote">Needs
+                    attention</small>
+            </article>
+        </section>
+        <section class="dashboard-grid">
+            <article class="panel revenue-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Performance / live</p>
+                        <h2>Revenue overview</h2>
+                    </div><select id="analyticsRange">
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="7">Last 7 days</option>
+                        <option value="365">This year</option>
+                    </select>
+                </div>
+                <div class="chart-summary">
+                    <div class="chart-value" id="dashboardChartValue">$0.00 <span
+                            id="dashboardChartChange">Period</span></div>
+                    <p><b id="dashboardChartHeadline">Revenue activity</b><br><span id="dashboardChartNote">Loading
+                            database
+                            activity.</span></p>
+                </div>
+                <div class="bar-chart" id="revenueChart" aria-label="Revenue chart"></div>
+                <div class="chart-labels" id="revenueChartLabels"></div>
+            </article>
+            <article class="panel channel-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Breakdown / mix</p>
+                        <h2>Sales by channel</h2>
+                    </div><button class="more-button" aria-label="More channel options">•••</button>
+                </div>
+                <div class="donut" id="salesChannelDonut">
+                    <div><strong id="salesChannelOrders">0</strong><small>period orders</small></div>
+                </div>
+                <div class="legend" id="salesChannelLegend"><span>Loading channels...</span></div>
+            </article>
+        </section>
+        <section class="dashboard-grid lower-grid">
+            <article class="panel table-panel" id="orders">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Live activity</p>
+                        <h2>Recent orders</h2>
+                    </div>
+                    <div class="order-tools"><select id="orderFilter" aria-label="Filter orders">
+                            <option value="all">All statuses</option>
+                            <option value="processing">Processing</option>
+                            <option value="shipped">Shipped</option>
+                            <option value="delivered">Delivered</option>
+                        </select><a href="#orders">View all ↗</a></div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersBody">
+                        <tr data-order-status="shipped">
+                            <td>#GR-82329</td>
+                            <td>Maria K.</td>
+                            <td>Today, 10:42</td>
+                            <td>$128.00</td>
+                            <td><select class="status-select shipped" data-order="GR-82329"
+                                    aria-label="Status for order GR-82329">
+                                    <option value="processing">Processing</option>
+                                    <option value="shipped" selected>Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                </select></td>
+                        </tr>
+                        <tr data-order-status="processing">
+                            <td>#GR-82328</td>
+                            <td>Jon Bell</td>
+                            <td>Today, 09:18</td>
+                            <td>$64.00</td>
+                            <td><select class="status-select processing" data-order="GR-82328"
+                                    aria-label="Status for order GR-82328">
+                                    <option value="processing" selected>Processing</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                </select></td>
+                        </tr>
+                        <tr data-order-status="delivered">
+                            <td>#GR-82327</td>
+                            <td>Samira A.</td>
+                            <td>Yesterday</td>
+                            <td>$212.00</td>
+                            <td><select class="status-select delivered" data-order="GR-82327"
+                                    aria-label="Status for order GR-82327">
+                                    <option value="processing">Processing</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered" selected>Delivered</option>
+                                </select></td>
+                        </tr>
+                        <tr data-order-status="processing">
+                            <td>#GR-82326</td>
+                            <td>Owen Wright</td>
+                            <td>Yesterday</td>
+                            <td>$38.00</td>
+                            <td><select class="status-select processing" data-order="GR-82326"
+                                    aria-label="Status for order GR-82326">
+                                    <option value="processing" selected>Processing</option>
+                                    <option value="shipped">Shipped</option>
+                                    <option value="delivered">Delivered</option>
+                                </select></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="table-empty" id="ordersEmpty" hidden>No orders match this status.</p>
+            </article>
+            <article class="panel inventory-panel" id="inventory">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">Needs attention</p>
+                        <h2>Low stock</h2>
+                    </div><a href="#inventory">Manage ↗</a>
+                </div>
+                <div class="stock-item"><span class="stock-image copper"></span>
+                    <div><strong>Ridge Ceramic Vase</strong><small>Objects / SKU-004</small></div><b>4 left</b>
+                </div>
+                <div class="stock-item"><span class="stock-image sand"></span>
+                    <div><strong>Form Watch / Black</strong><small>Wear / SKU-001</small></div><b>7 left</b>
+                </div>
+                <div class="stock-item"><span class="stock-image blue"></span>
+                    <div><strong>Kinto Travel Tumbler</strong><small>Home / SKU-002</small></div><b>9 left</b>
+                </div>
+            </article>
+        </section>
+        <section class="panel product-catalog" id="products">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Catalog management</p>
+                    <h2>Products</h2>
+                </div>
+                <div class="catalog-tools"><input id="productSearch" type="search" placeholder="Search products"
+                        aria-label="Search products"><button class="ghost-button" id="catalogAdd">＋ Add product</button>
+                </div>
+            </div>
+            <div class="catalog-grid" id="productCatalog"></div>
+            <p class="catalog-empty" id="catalogEmpty" hidden>No products match your search.</p>
+        </section>
+        <section class="panel utility-panel" id="customers">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Relationship management</p>
+                    <h2>Customers</h2>
+                </div><span class="section-count">6,842 total</span>
+            </div>
+            <div class="utility-stats">
+                <div><strong>124</strong><small>New this month</small></div>
+                <div><strong>68%</strong><small>Returning customers</small></div>
+                <div><strong id="customerLifetimeValue">$74.18</strong><small>Average lifetime value</small></div>
+            </div>
+        </section>
+        <section class="panel utility-panel users-panel" id="users">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Access and account management</p>
+                    <h2>Users</h2>
+                </div><button class="primary-button" id="addUser" type="button">＋ Add user</button>
+            </div>
+            <form class="user-create-form" id="userCreateForm" hidden>
+                <div class="admin-field-grid"><label>First name<input name="firstName" required
+                            maxlength="80"></label><label>Last name<input name="lastName" required
+                            maxlength="80"></label></div>
+                <div class="admin-field-grid"><label>Email<input name="email" type="email"
+                            required></label><label>Temporary
+                        password<input name="password" type="password" minlength="8" required></label></div>
+                <div class="admin-field-grid"><label>Role<select name="role">
+                            <option value="CUSTOMER">Customer</option>
+                            <option value="STAFF">Staff</option>
+                            <option value="ADMIN">Administrator</option>
+                        </select></label><label>Status<select name="status">
+                            <option value="ACTIVE">Active</option>
+                            <option value="PENDING">Pending</option>
+                            <option value="INACTIVE">Inactive</option>
+                            <option value="SUSPENDED">Suspended</option>
+                            <option value="BANNED">Banned</option>
+                        </select></label></div>
+                <div class="user-form-actions"><button class="ghost-button" id="cancelUser"
+                        type="button">Cancel</button><button class="primary-button" type="submit">Create user</button>
+                </div>
+            </form>
+            <div class="users-toolbar"><input id="userSearch" type="search" placeholder="Search users"
+                    aria-label="Search users"><select id="userRoleFilter" aria-label="Filter users by role">
+                    <option value="">All roles</option>
+                    <option value="CUSTOMER">Customers</option>
+                    <option value="STAFF">Staff</option>
+                    <option value="ADMIN">Administrators</option>
+                </select></div>
+            <div class="admin-list" id="userList">
+                <p class="table-empty">Loading users...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="kyc">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Compliance</p>
+                    <h2>KYC submissions</h2><small>Review identity submissions from staff accounts.</small>
+                </div><span class="section-count" id="kycCount">0 pending</span>
+            </div>
+            <div class="admin-kyc-toolbar"><input id="kycSearch" type="search"
+                    placeholder="Search by name, email, or document" aria-label="Search KYC applicants"><select
+                    id="kycStatusFilter" aria-label="Filter KYC status">
+                    <option value="ALL">All status</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="PROCESSING">Processing</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                </select></div>
+            <div class="admin-kyc-table-view" id="kycTableView">
+                <div class="admin-table-wrap">
+                    <table class="admin-kyc-table">
+                        <thead>
+                            <tr>
+                                <th>Applicant</th>
+                                <th>Document</th>
+                                <th>Submitted</th>
+                                <th>Access tier</th>
+                                <th>Status</th>
+                                <th><span class="sr-only">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="kycTableBody">
+                            <tr>
+                                <td colspan="6" class="table-empty">Loading KYC applications...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <section class="admin-kyc-detail" id="kycDetailPanel" hidden>
+                <div class="admin-kyc-detail-toolbar"><button class="ghost-button" type="button" id="kycBackToList">←
+                        Back to
+                        submissions</button><span class="section-count" id="kycReviewMode">Review submission</span>
+                </div>
+                <div class="admin-kyc-detail-empty" id="kycDetailEmpty"><span>◌</span><strong>Select a
+                        submission</strong><small>Choose View or Process from the submissions table.</small></div>
+                <form class="admin-kyc-detail-form" id="kycDetailForm" hidden></form>
+            </section>
+        </section>
+        <section class="panel utility-panel" id="performance">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Client performance</p>
+                    <h2>Performance</h2>
+                </div><select id="performanceRange" aria-label="Performance period">
+                    <option value="7">Last 7 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                    <option value="365">This year</option>
+                </select>
+            </div>
+            <div class="utility-stats performance-stats">
+                <div><strong id="performanceRevenue">$0</strong><small>Revenue</small></div>
+                <div><strong id="performanceOrders">0</strong><small>Orders</small></div>
+                <div><strong id="performanceCustomers">0</strong><small>New customers</small></div>
+                <div><strong id="performanceAverage">$0</strong><small>Average order</small></div>
+            </div>
+            <div class="performance-list" id="topProducts">
+                <p class="table-empty">Loading best sellers...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="promotions">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Promotions and discounts</p>
+                    <h2>Coupons</h2>
+                </div>
+                <div class="panel-heading-actions"><span class="section-count" id="couponCount">0 active</span><button
+                        class="primary-button" id="createCouponButton" type="button">＋ Create coupon</button></div>
+            </div>
+            <div class="admin-list" id="couponList">
+                <p class="table-empty">Loading coupons...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="categories">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Catalog structure</p>
+                    <h2>Categories</h2>
+                </div><span class="section-count" id="categoryCount">0 categories</span>
+            </div>
+            <form class="admin-inline-form" id="categoryForm"><input name="name" placeholder="Category name"
+                    aria-label="Category name" required><input name="slug" placeholder="category-slug"
+                    aria-label="Category slug" required><button class="primary-button" type="submit">Add
+                    category</button></form>
+            <div class="admin-list" id="categoryList">
+                <p class="table-empty">Loading categories...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="settings">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Workspace controls</p>
+                    <h2>Settings</h2>
+                </div><a class="section-count settings-detail-link" href="#settingsDetails" hidden>Commerce defaults
+                    ↗</a>
+            </div>
+            <div class="setting-row"><span><strong>Store status</strong><small>Customers can browse and place
+                        orders</small></span><button class="switch active" id="storeStatus"
+                    aria-label="Toggle store status"><i></i></button></div>
+            <div class="setting-row"><span><strong>Low stock alerts</strong><small>Notify the team when inventory drops
+                        below
+                        10</small></span><button class="switch active" id="lowStockAlerts"
+                    aria-label="Toggle low stock alerts"><i></i></button></div>
+        </section>
+        <section class="panel utility-panel" id="settingsDetails" hidden>
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Store configuration</p>
+                    <h2>Commerce defaults</h2>
+                </div>
+            </div>
+            <form class="settings-form" id="settingsForm">
+                <div class="admin-field-grid"><label>Store name<input name="storeName" required></label><label>Store
+                        logo
+                        URL<input name="storeLogo" type="url" placeholder="https://..."
+                            aria-describedby="storeLogoHelp"><small id="storeLogoHelp">Optional image URL. The first
+                            store-name letter is used when empty.</small></label>
+                </div>
+                <div class="admin-field-grid brand-color-fields"><label>Primary brand color<input
+                            name="brandPrimaryColor" type="color" value="#20211d"></label><label>Accent brand color<input
+                            name="brandAccentColor" type="color" value="#c7e86a"></label><small>These colors style
+                        primary actions, highlights, and interactive states throughout the storefront and admin.</small>
+                </div>
+                <div class="admin-field-grid"><label>Support email<input name="supportEmail"
+                            type="email"></label><label>Currency<select name="defaultCurrency">
+                            <option>USD</option>
+                            <option>GHS</option>
+                            <option>GBP</option>
+                        </select></label></div>
+                <div class="admin-field-grid"><label>Payment provider<select name="paymentProvider">
+                            <option value="paystack">Paystack</option>
+                            <option value="hubtel">Hubtel</option>
+                            <option value="mpesa">M-Pesa</option>
+                        </select></label><label>Default delivery rate<input name="defaultShippingRate" type="number"
+                            min="0" step="0.01"></label></div>
+                <div class="admin-field-grid"><label>Paystack public key<input name="paystackPublicKey"
+                            placeholder="pk_test_..."></label><label>Paystack secret key<input name="paystackSecretKey"
+                            type="password" placeholder="sk_test_..."></label></div><small>Paystack keys are stored in
+                    app settings
+                    and used for initialization and verification. Keep the secret key private.</small>
+                <div class="admin-field-grid"><label>Free shipping threshold<input name="freeShippingThreshold"
+                            type="number" min="0" step="0.01"></label><label>Low-stock threshold<input
+                            name="lowStockThreshold" type="number" min="0" step="1"></label></div><small>Products at or
+                    below the low-stock threshold appear in
+                    alerts.</small><label class="check-row"><input name="taxEnabled" type="checkbox"> Enable configured
+                    tax
+                    quotes</label>
+                <div class="admin-field-grid tax-rate-fields" id="taxRateFields" hidden><label>Ghana tax rate (%)<input
+                            name="taxRateGH" type="number" min="0" max="100" step="0.01"></label><label>United States
+                        tax rate
+                        (%)<input name="taxRateUS" type="number" min="0" max="100" step="0.01"></label><label>United
+                        Kingdom tax
+                        rate (%)<input name="taxRateGB" type="number" min="0" max="100" step="0.01"></label></div>
+                <div class="tax-country-settings">
+                    <div class="panel-label"><span>Supported countries and tax rates</span><button class="ghost-button"
+                            id="addTaxCountry" type="button">＋ Add country</button></div>
+                    <div id="taxCountryList"></div>
+                </div><button class="primary-button" type="submit">Save settings</button>
+            </form>
+        </section>
+        <section class="panel utility-panel" id="adminNotifications">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Operations inbox</p>
+                    <h2>Notifications</h2>
+                </div><button class="ghost-button" id="markNotificationsRead">Mark all read</button>
+            </div>
+            <div class="admin-list" id="adminNotificationList">
+                <p class="table-empty">Loading notifications...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="adminReturns">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Customer care</p>
+                    <h2>Item returns</h2>
+                </div>
+                <button class="ghost-button" id="refreshReturns" type="button">Refresh</button>
+            </div>
+            <div class="admin-list" id="adminReturnsList">
+                <p class="table-empty">Loading return requests...</p>
+            </div>
+        </section>
+        <section class="panel utility-panel" id="adminChat">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Customer support</p>
+                    <h2>Messages</h2>
+                </div>
+                <div class="chat-heading-actions"><button class="ghost-button conversation-list-toggle"
+                        id="toggleChatList" type="button" aria-label="Show messages list">☰
+                        <span>Messages</span></button><button class="ghost-button" id="markChatRead">Mark all
+                        read</button></div>
+            </div>
+            <div class="chat-tabs" role="tablist" aria-label="Chat workspace">
+                <button class="chat-tab active" type="button" role="tab" aria-selected="true"
+                    aria-controls="chatMessagesTab" data-chat-tab="messages">Conversations</button>
+                <button class="chat-tab" type="button" role="tab" aria-selected="false" aria-controls="chatTrainingTab"
+                    data-chat-tab="training">AI training</button>
+            </div>
+            <div class="chat-tab-panel" id="chatMessagesTab" data-chat-panel="messages">
+                <div class="messages-workspace">
+                    <aside class="conversation-list" id="adminChatList">
+                        <p class="table-empty">Loading conversations...</p>
+                    </aside>
+                    <section class="conversation-view" id="adminChatView">
+                        <div class="empty-conversation"><span>◌</span><strong>Select a
+                                conversation</strong><small>Choose a
+                                customer
+                                to open the chat.</small></div>
+                    </section>
+                </div>
+            </div>
+            <div class="chat-tab-panel" id="chatTrainingTab" data-chat-panel="training" hidden>
+                <section class="chat-ai-training" id="chatAiTraining">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">Assistant knowledge</p>
+                            <h3>Frequently asked questions</h3>
+                            <small>Train tailored answers for questions your customers ask most.</small>
+                        </div><span class="section-count" id="chatAiTrainingCount">0 saved</span>
+                    </div>
+                    <form class="chat-ai-training-form" id="chatAiTrainingForm">
+                        <label>Customer question<input name="question" maxlength="300"
+                                placeholder="How long does delivery take?" required></label>
+                        <label>Assistant response<textarea name="response" maxlength="2000" rows="3"
+                                placeholder="Give the approved answer customers should receive."
+                                required></textarea></label>
+                        <div class="chat-ai-training-actions"><button class="primary-button" id="chatAiTrainingSave"
+                                type="submit">Save AI response <span>↗</span></button><button class="ghost-button"
+                                id="chatAiTrainingCancel" type="button" hidden>Cancel edit</button></div>
+                    </form>
+                    <div class="admin-list" id="chatAiTrainingList">
+                        <p class="table-empty">Loading trained responses...</p>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+    <div class="admin-modal product-detail-modal" id="productDetailModal" aria-hidden="true" role="dialog"
+        aria-modal="true" aria-label="Product details">
+        <div class="admin-modal-header">
+            <div>
+                <p class="eyebrow">Catalog / Product details</p>
+                <h2 id="productDetailTitle">Product</h2>
+            </div><button id="productDetailClose" aria-label="Close product details">×</button>
+        </div>
+        <div id="productDetailContent"></div>
+    </div>
+    <div class="admin-modal order-detail-modal" id="orderDetailModal" aria-hidden="true" role="dialog" aria-modal="true"
+        aria-label="Order details">
+        <div class="admin-modal-header">
+            <div>
+                <p class="eyebrow">Orders / Details</p>
+                <h2 id="orderDetailTitle">Order</h2>
+            </div><button id="orderDetailClose" aria-label="Close order details">×</button>
+        </div>
+        <div id="orderDetailContent"></div>
+    </div>
+    <div class="admin-modal user-detail-modal" id="userDetailModal" aria-hidden="true" role="dialog" aria-modal="true"
+        aria-label="User details">
+        <div class="admin-modal-header">
+            <div>
+                <p class="eyebrow">Users / Details</p>
+                <h2 id="userDetailTitle">User</h2>
+            </div><button id="userDetailClose" aria-label="Close user details">×</button>
+        </div>
+        <div id="userDetailContent"></div>
+    </div>
+    <div class="admin-modal kyc-document-modal" id="kycDocumentModal" aria-hidden="true" role="dialog" aria-modal="true"
+        aria-label="KYC document">
+        <div class="admin-modal-header">
+            <div>
+                <p class="eyebrow">Compliance / Document</p>
+                <h2 id="kycDocumentTitle">Identity document</h2>
+            </div><button id="kycDocumentClose" aria-label="Close document viewer">×</button>
+        </div>
+        <div class="kyc-document-layout">
+            <div class="kyc-document-viewer"><img id="kycDocumentImage" src="" alt="KYC identity document">
+                <p id="kycDocumentError" hidden>Document preview unavailable.</p>
+            </div>
+            <aside class="kyc-document-details" id="kycDocumentDetails">
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Applicant</span><strong
+                        id="kycDocumentApplicant">-</strong></article>
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Document</span><strong
+                        id="kycDocumentDocumentType">-</strong><small id="kycDocumentNumber">-</small></article>
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Status</span><strong
+                        id="kycDocumentStatus">-</strong><small id="kycDocumentReason">-</small></article>
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Submitted</span><strong
+                        id="kycDocumentSubmitted">-</strong></article>
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Notes</span><small
+                        id="kycDocumentNotes">No notes provided.</small></article>
+                <article class="kyc-document-detail-card"><span class="kyc-detail-label">Uploaded files</span>
+                    <div class="kyc-document-file-list" id="kycDocumentFiles"></div>
+                </article>
+            </aside>
+        </div>
+        <div class="kyc-document-gallery" id="kycDocumentGallery"></div><a class="primary-button kyc-document-download"
+            id="kycDocumentDownload" href="" target="_blank" rel="noopener">Open document in new tab <span>↗</span></a>
+    </div>
+    <div class="admin-modal" id="productModal" aria-hidden="true" role="dialog" aria-modal="true"
+        aria-label="Add product">
+        <div class="admin-modal-header">
+            <div>
+                <p class="eyebrow">Catalog</p>
+                <h2>Add a product</h2>
+            </div><button id="productModalClose" aria-label="Close product editor">×</button>
+        </div>
+        <form id="productForm">
+            <div class="media-upload">
+                <div class="media-preview" id="mediaPreview"><span>＋</span><small>Product image</small></div>
+                <div><strong>Product media</strong>
+                    <p>Add a clear cover image so customers can understand the product at a glance.</p><label
+                        class="upload-button">Upload image<input id="productImage" type="file" accept="image/*"></label>
+                </div>
+            </div><label>Product name<input name="name" placeholder="e.g. Stoneware Carafe" required></label>
+            <div class="admin-field-grid"><label>Category<div class="category-input"><select name="category"
+                            id="productCategory"></select><button type="button" id="addCategory"
+                            aria-label="Add category">＋</button>
+                    </div></label><label>Price<input name="price" type="number" min="1" placeholder="0"
+                        required></label></div>
+            <label>Short description<textarea name="description" rows="2"
+                    placeholder="What makes this piece worth owning?"></textarea></label><label>How to use<textarea
+                    name="usage" rows="2" placeholder="Care, setup, or everyday use notes"></textarea></label><label>Key
+                features<textarea name="features" rows="2"
+                    placeholder="Hand-thrown; dishwasher safe; made in Ghana"></textarea></label><label
+                class="check-row product-featured-field"><input name="featured" type="checkbox"> Show in featured
+                products</label><label>Available stock<input name="stock" type="number" min="0" placeholder="0"
+                    required></label><button class="primary-button" id="productSubmit" type="submit">Create product
+                <span>↗</span></button>
+        </form>
+    </div>
+    <div class="admin-login" id="adminLogin" aria-hidden="true">
+        <div class="admin-login-card">
+            <div class="login-visual"><a class="login-brand" href="index.html"><span>S</span><strong>Store</strong></a>
+                <div>
+                    <p class="eyebrow">Operations workspace</p>
+                    <h2>Run the store with clarity.</h2>
+                    <p>Orders, products, customers, and performance in one focused space.</p>
+                </div>
+                <div class="login-links"><a href="index.html">← Back home</a><button type="button" class="text-button"
+                        id="adminExitToStore">Exit</button></div>
+            </div>
+            <form id="adminLoginForm">
+                <div class="login-heading">
+                    <p class="eyebrow">Welcome back</p>
+                    <h2>Sign in to your store.</h2>
+                    <p>Use your administrator or staff account to continue.</p>
+                </div><label>Email address<input name="email" type="email" autocomplete="username"
+                        required></label><label>Password<div class="password-field"><input name="password"
+                            type="password" autocomplete="current-password" required><button type="button"
+                            id="toggleAdminPassword" aria-label="Show password">Show</button></div></label><button
+                    class="primary-button login-submit" type="submit"><span>Enter workspace</span><b>↗</b></button>
+                <div class="login-status" id="adminConnectionStatus"><i></i><span>Checking connection...</span></div>
+                <small id="adminLoginError"></small><button type="button" class="login-retry" id="adminRetry">Retry
+                    connection</button>
+            </form>
+        </div>
+    </div>
+    <div class="admin-toast" id="adminToast">Product editor is ready to connect.</div>
+    <link rel="stylesheet" href="/node_modules/sweetalert2/dist/sweetalert2.min.css">
+    <script src="/node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
+    <script src="runtime-config.js?v=20260911"></script>
+    <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
+    <script src="admin.js?v=20261124-brand-theme-1"></script>
+</body>
+
+</html>

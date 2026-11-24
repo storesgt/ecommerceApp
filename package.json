@@ -1,0 +1,45 @@
+{
+  "name": "ground-commerce",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch server/src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test test/**/*.test.ts",
+    "start": "node dist/server/src/main.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.14.0",
+    "@types/nodemailer": "^8.0.1",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.1",
+    "sweetalert2": "^11.26.25",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^24.3.0",
+    "prisma": "^6.14.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "prisma@6.19.3": true,
+    "esbuild@0.28.2": true
+  }
+}
