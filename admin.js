@@ -407,6 +407,96 @@ document.querySelector('#addTaxCountry')?.addEventListener('click', () => { cons
 taxCountryList?.addEventListener('click', (event) => { const remove = event.target.closest('[data-remove-tax-country]'); if (!remove) return; remove.closest('[data-tax-country-row]')?.remove(); });
 renderTaxCountries();
 syncTaxRateVisibility();
+settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const data = new FormData(event.currentTarget);
+  const taxCountries = [...document.querySelectorAll('[data-tax-country-row]')].map((row) => ({
+    code: String(row.querySelector('[name="taxCountryCode"]')?.value || '').trim().toUpperCase(),
+    name: String(row.querySelector('[name="taxCountryName"]')?.value || '').trim(),
+    rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0),
+  })).filter((country) => country.code && country.name);
+  const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({
+    id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(),
+    name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(),
+    serviceFee: Number(row.querySelector('[name="gatewayServiceFee"]')?.value || 0),
+    enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked),
+    publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '',
+    secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '',
+    clientId: row.querySelector('[name="gatewayClientId"]')?.value || '',
+    clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '',
+    merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '',
+    apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '',
+    callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '',
+    webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '',
+  })).filter((gateway) => gateway.id && gateway.name);
+  const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0];
+  const smtpPassword = String(data.get('smtpPassword') || '');
+  const clearSmtpPassword = data.get('clearSmtpPassword') === 'on';
+  const payload = {
+    storeName: data.get('storeName'),
+    storeLogo: data.get('storeLogo') || '',
+    brandPrimaryColor: data.get('brandPrimaryColor'),
+    brandAccentColor: data.get('brandAccentColor'),
+    supportEmail: String(data.get('supportEmail') || '').trim(),
+    smtpHost: String(data.get('smtpHost') || '').trim(),
+    smtpPort: Number(data.get('smtpPort') || 587),
+    smtpSecure: data.get('smtpSecure') === 'on',
+    smtpUser: String(data.get('smtpUser') || '').trim(),
+    smtpFrom: String(data.get('smtpFrom') || '').trim(),
+    ...(clearSmtpPassword ? { smtpPassword: '' } : smtpPassword ? { smtpPassword } : {}),
+    defaultCurrency: data.get('defaultCurrency'),
+    paymentProvider: activeGateway?.id || 'paystack',
+    paymentGateways,
+    paystackPublicKey: activeGateway?.id === 'paystack' ? activeGateway.publicKey : '',
+    paystackSecretKey: activeGateway?.id === 'paystack' ? activeGateway.secretKey : '',
+    defaultShippingRate: data.get('defaultShippingRate'),
+    freeShippingThreshold: data.get('freeShippingThreshold'),
+    lowStockThreshold: data.get('lowStockThreshold'),
+    taxEnabled: data.get('taxEnabled') === 'on',
+    taxCountries,
+  };
+  try {
+    await adminJson('/api/v1/settings', { method: 'PATCH', body: JSON.stringify(payload) });
+    settingsForm.elements.smtpPassword.value = '';
+    settingsForm.elements.clearSmtpPassword.checked = false;
+    await loadAdminBranding();
+    showToast('Settings saved.');
+    await loadFullSettings();
+  } catch (error) {
+    showToast(error.message);
+  }
+}, true);
+document.querySelector('.smtp-settings')?.addEventListener('input', () => {
+  const status = document.querySelector('#smtpTestResult');
+  status.removeAttribute('data-state');
+  status.textContent = 'SMTP settings changed. Save them before sending a new test.';
+});
+document.querySelector('#testSmtpConnection')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const recipientField = document.querySelector('#smtpTestRecipient');
+  const status = document.querySelector('#smtpTestResult');
+  const recipient = recipientField.value.trim();
+  if (!recipient || !recipientField.checkValidity()) {
+    status.dataset.state = 'error';
+    status.textContent = 'Enter a valid email address to receive the test message.';
+    recipientField.focus();
+    return;
+  }
+  button.disabled = true;
+  status.dataset.state = 'pending';
+  status.textContent = 'Sending a test message using the saved SMTP settings...';
+  try {
+    await adminJson('/api/v1/settings/test-smtp', { method: 'POST', body: JSON.stringify({ recipient }) });
+    status.dataset.state = 'success';
+    status.textContent = `SMTP accepted the test email for ${recipient}. Check that inbox and its spam folder.`;
+  } catch (error) {
+    status.dataset.state = 'error';
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 settingsForm.addEventListener('submit', async (event) => { event.preventDefault(); event.stopImmediatePropagation(); const data = new FormData(event.target); const taxCountries = [...document.querySelectorAll('[data-tax-country-row]')].map((row) => ({ code: String(row.querySelector('[name="taxCountryCode"]')?.value || '').trim().toUpperCase(), name: String(row.querySelector('[name="taxCountryName"]')?.value || '').trim(), rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0) })).filter((country) => country.code && country.name); const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({ id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(), name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(), serviceFee: Number(row.querySelector('[name="gatewayServiceFee"]')?.value || 0), enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked), publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '', secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '', clientId: row.querySelector('[name="gatewayClientId"]')?.value || '', clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '', merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '', apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '', callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '', webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '' })).filter((gateway) => gateway.id && gateway.name); const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0]; try { await adminJson('/api/v1/settings', { method: 'PATCH', body: JSON.stringify({ storeName: data.get('storeName'), storeLogo: data.get('storeLogo') || '', brandPrimaryColor: data.get('brandPrimaryColor'), brandAccentColor: data.get('brandAccentColor'), supportEmail: data.get('supportEmail') || undefined, defaultCurrency: data.get('defaultCurrency'), paymentProvider: activeGateway?.id || 'paystack', paymentGateways, paystackPublicKey: activeGateway?.id === 'paystack' ? activeGateway.publicKey : '', paystackSecretKey: activeGateway?.id === 'paystack' ? activeGateway.secretKey : '', defaultShippingRate: data.get('defaultShippingRate'), freeShippingThreshold: data.get('freeShippingThreshold'), lowStockThreshold: data.get('lowStockThreshold'), taxEnabled: data.get('taxEnabled') === 'on', taxCountries }) }); await loadAdminBranding(); showToast('Settings saved.'); await loadFullSettings(); } catch (error) { showToast(error.message); } }, true);
 document.querySelector('#settingsForm').addEventListener('submit', async (event) => { event.preventDefault(); const data = new FormData(event.target); const taxCountries = [...document.querySelectorAll('[data-tax-country-row]')].map((row) => ({ code: String(row.querySelector('[name="taxCountryCode"]')?.value || '').trim().toUpperCase(), name: String(row.querySelector('[name="taxCountryName"]')?.value || '').trim(), rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0) })).filter((country) => country.code && country.name); const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({ id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(), name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(), enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked), publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '', secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '', clientId: row.querySelector('[name="gatewayClientId"]')?.value || '', clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '', merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '', apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '', callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '', webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '' })).filter((gateway) => gateway.id && gateway.name); const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0]; try { await adminJson('/api/v1/settings', { method: 'PATCH', body: JSON.stringify({ storeName: data.get('storeName'), storeLogo: data.get('storeLogo') || '', supportEmail: data.get('supportEmail') || undefined, defaultCurrency: data.get('defaultCurrency'), paymentProvider: activeGateway?.id || 'paystack', paymentGateways, paystackPublicKey: activeGateway?.id === 'paystack' ? activeGateway.publicKey : '', paystackSecretKey: activeGateway?.id === 'paystack' ? activeGateway.secretKey : '', defaultShippingRate: data.get('defaultShippingRate'), freeShippingThreshold: data.get('freeShippingThreshold'), lowStockThreshold: data.get('lowStockThreshold'), taxEnabled: data.get('taxEnabled') === 'on', taxCountries }) }); await loadAdminBranding(); showToast('Settings saved.'); await loadFullSettings(); } catch (error) { showToast(error.message); } });
 document.querySelector('.settings-detail-link').addEventListener('click', (event) => { event.preventDefault(); switchView('#settingsDetails'); document.querySelector("a[href='#settings']").classList.add('active'); });

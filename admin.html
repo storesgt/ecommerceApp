@@ -11,7 +11,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="admin.css?v=20261124-shopping-ux-1" />
+    <link rel="stylesheet" href="admin.css?v=20261125-admin-smtp-support-3" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 </head>
 
@@ -420,11 +420,30 @@
                         primary actions, highlights, and interactive states throughout the storefront and admin.</small>
                 </div>
                 <div class="admin-field-grid"><label>Support email<input name="supportEmail"
-                            type="email"></label><label>Currency<select name="defaultCurrency">
+                            type="email" autocomplete="email"><small>Published to customers as your support contact.</small></label><label>Currency<select name="defaultCurrency">
                             <option>USD</option>
                             <option>GHS</option>
                             <option>GBP</option>
                         </select></label></div>
+                <div class="smtp-settings">
+                    <div class="panel-label"><span>Email delivery (SMTP)</span></div>
+                    <p class="settings-help">Configure outgoing account verification email. Credentials are stored in admin settings; the saved password is never shown.</p>
+                    <div class="admin-field-grid">
+                        <label>SMTP host<input name="smtpHost" autocomplete="off" placeholder="smtp.example.com"></label>
+                        <label>SMTP port<input name="smtpPort" type="number" min="1" max="65535" step="1" value="587"></label>
+                        <label>SMTP username<input name="smtpUser" autocomplete="username"></label>
+                        <label>Sender address<input name="smtpFrom" placeholder="Store name &lt;mail@example.com&gt;"></label>
+                        <label>SMTP password<input name="smtpPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved password"></label>
+                        <label class="check-row"><input name="smtpSecure" type="checkbox"> Use implicit TLS (usually port 465)</label>
+                    </div>
+                    <small id="smtpPasswordStatus" class="smtp-password-status">SMTP password is never shown here. Leave the field blank to keep the saved password.</small>
+                    <label class="check-row smtp-clear-password"><input name="clearSmtpPassword" type="checkbox"> Clear saved SMTP password</label>
+                    <div class="smtp-test-row">
+                        <label class="smtp-test-recipient">Send test email to<input id="smtpTestRecipient" type="email" autocomplete="email" placeholder="you@example.com"></label>
+                        <button class="ghost-button" id="testSmtpConnection" type="button"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send test email</button>
+                        <small id="smtpTestResult" role="status" aria-live="polite">Enter an inbox you can check. Save your SMTP settings before sending.</small>
+                    </div>
+                </div>
                 <div class="admin-field-grid"><label>Payment provider<select name="paymentProvider">
                             <option value="paystack">Paystack</option>
                             <option value="hubtel">Hubtel</option>
@@ -660,7 +679,7 @@
     <script src="/node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
     <script src="runtime-config.js?v=20260911"></script>
     <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
-    <script src="admin.js?v=20261124-brand-theme-1"></script>
+    <script src="admin.js?v=20261125-admin-smtp-support-4"></script>
 </body>
 
 </html>

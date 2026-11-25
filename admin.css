@@ -2677,6 +2677,74 @@ body[data-theme="dark"] .activity-controls select {
 	margin: 0;
 }
 
+.smtp-settings {
+	background: color-mix(in srgb, var(--paper) 78%, var(--soft));
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	display: grid;
+	gap: 12px;
+	padding: 16px;
+}
+
+.smtp-settings .panel-label {
+	margin: 0;
+}
+
+.smtp-settings .admin-field-grid {
+	margin: 0;
+}
+
+.settings-help,
+.smtp-password-status {
+	color: var(--muted);
+	font-size: 11px;
+	line-height: 1.5;
+	margin: 0;
+}
+
+.smtp-clear-password {
+	color: var(--muted);
+}
+
+.smtp-test-row {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.smtp-test-recipient {
+	display: grid;
+	flex: 1 1 240px;
+	gap: 6px;
+}
+
+.smtp-test-row .ghost-button {
+	align-items: center;
+	display: inline-flex;
+	gap: 8px;
+}
+
+.smtp-test-row small {
+	flex-basis: 100%;
+	color: var(--muted);
+	font-size: 11px;
+	line-height: 1.5;
+}
+
+.smtp-test-row small[data-state="success"] {
+	color: var(--success, #22834a);
+}
+
+.smtp-test-row small[data-state="error"] {
+	color: var(--danger, #b42318);
+}
+
+body[data-theme="dark"] .smtp-settings {
+	background: color-mix(in srgb, var(--soft) 75%, #151a16);
+	border-color: var(--line);
+}
+
 .check-row {
 	align-items: center;
 	display: flex;

@@ -23,7 +23,8 @@ router.post('/register', async (request, response, next) => {
     const exists = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
     if (exists) return response.status(409).json({ error: 'An account with that email already exists' });
     const passwordHash = await bcrypt.hash(password, 12);
-    const verificationRequired = isMailerConfigured() || process.env.NODE_ENV === 'production';
+    const mailerConfigured = await isMailerConfigured();
+    const verificationRequired = mailerConfigured || process.env.NODE_ENV === 'production';
     const user = await prisma.user.create({ data: { ...profile, email: profile.email.toLowerCase(), passwordHash, status: verificationRequired ? 'PENDING' : 'ACTIVE', emailVerified: !verificationRequired }, select: { id: true, firstName: true, lastName: true, email: true, role: true, status: true } });
     const verificationToken = rawToken();
     await prisma.emailVerificationToken.create({ data: { userId: user.id, tokenHash: tokenHash(verificationToken), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) } });
@@ -34,7 +35,7 @@ router.post('/register', async (request, response, next) => {
       console.error('Verification email could not be sent', error);
     }
     await prisma.auditLog.create({ data: { userId: user.id, action: 'AUTH_REGISTER', entity: 'User', entityId: user.id, metadata: { email: user.email, role: user.role } } });
-    return response.status(201).json({ user, emailSent, message: verificationRequired ? (emailSent ? 'Check your email to verify your account.' : 'Your account was created, but email delivery is not configured.') : 'Account created. You can sign in now.', ...(!verificationRequired ? {} : (!isMailerConfigured() || process.env.NODE_ENV !== 'production' ? { developmentVerificationToken: verificationToken } : {})) });
+    return response.status(201).json({ user, emailSent, message: verificationRequired ? (emailSent ? 'Check your email to verify your account.' : 'Your account was created, but email delivery is not configured.') : 'Account created. You can sign in now.', ...(!verificationRequired ? {} : (!mailerConfigured || process.env.NODE_ENV !== 'production' ? { developmentVerificationToken: verificationToken } : {})) });
   } catch (error) { return next(error); }
 });
 
