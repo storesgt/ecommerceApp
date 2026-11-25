@@ -1,5 +1,6 @@
 node_modules/
 dist/
+tracking-map.bundle.js
 .env
 .prisma/
 uploads/*

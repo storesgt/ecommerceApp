@@ -13,7 +13,8 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20261124-brand-theme-1" />
+  <link rel="stylesheet" href="styles.css?v=20261125-tracking-status-rail-2" />
+  <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
 </head>
 
 <body>
@@ -76,7 +77,8 @@
             class="category-tab active" data-category="All">All products</button></div>
         <div class="catalog-search-row">
           <form class="catalog-search" id="catalogSearch"><span class="search-icon" aria-hidden="true"></span><input
-              id="catalogSearchInput" type="search" placeholder="Search products by name" aria-label="Search products">
+              id="catalogSearchInput" type="search" placeholder="Search name, category, or details"
+              aria-label="Search products by name, category, or details">
           </form><label class="sort-control">Sort by <select id="sortSelect">
               <option value="featured">Featured</option>
               <option value="price-low">Price: low to high</option>
@@ -85,9 +87,13 @@
             </select></label>
         </div>
       </div>
+      <p class="catalog-result-count" id="catalogResultCount" role="status" aria-live="polite"></p>
       <p class="store-closed" id="storeClosed" hidden>The store is taking a short pause. Please check back soon.</p>
       <div class="product-grid" id="productGrid"></div>
-      <p class="empty-state" id="emptyState" hidden>No pieces match that search.</p>
+      <div class="empty-state" id="emptyState" role="status" hidden>
+        <p id="emptyStateMessage">No products are available right now.</p>
+        <button class="page-secondary" id="clearCatalogFilters" type="button" hidden>Clear filters</button>
+      </div>
     </section>
 
     <section class="top-products-section" aria-labelledby="top-products-title">
@@ -350,7 +356,7 @@
   <script src="node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
   <script src="runtime-config.js?v=20260911"></script>
   <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
-  <script src="app.js?v=20261124-brand-theme-1"></script>
+  <script src="app.js?v=20261125-tracking-status-rail-2"></script>
 </body>
 
 </html>

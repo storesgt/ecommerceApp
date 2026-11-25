@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch server/src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "predev": "npm run build:tracking-map",
+    "build": "tsc -p tsconfig.json && npm run build:tracking-map",
+    "build:tracking-map": "esbuild tracking-map-entry.js --bundle --minify --platform=browser --format=iife --inject:tracking-map-leaflet-inject.js --outfile=tracking-map.bundle.js",
     "test": "tsx --test test/**/*.test.ts",
     "start": "node dist/server/src/main.js",
     "db:generate": "prisma generate",
@@ -21,6 +23,8 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "leaflet": "1.9.4",
+    "leaflet.marker-motion": "https://codeload.github.com/AlejandroRM-DEV/Leaflet.MarkerMotion/tar.gz/403df0378b22a9d8285ace4f43b3f87feaee1e54",
     "multer": "^2.3.0",
     "nodemailer": "^10.0.1",
     "sweetalert2": "^11.26.25",
@@ -32,6 +36,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^24.3.0",
+    "esbuild": "0.28.2",
     "prisma": "^6.14.0",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2"

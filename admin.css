@@ -6888,9 +6888,25 @@ button:focus-visible,
 }
 
 .brand-color-fields input[type="color"] {
+	appearance: none;
 	cursor: pointer;
 	height: 44px;
 	padding: 4px;
+	border-radius: 0;
+}
+
+.brand-color-fields input[type="color"]::-webkit-color-swatch-wrapper {
+	padding: 0;
+}
+
+.brand-color-fields input[type="color"]::-webkit-color-swatch {
+	border: 0;
+	border-radius: 0;
+}
+
+.brand-color-fields input[type="color"]::-moz-color-swatch {
+	border: 0;
+	border-radius: 0;
 }
 
 button:disabled {
