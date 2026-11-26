@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { calculateShippingPrice } from '../lib/shipping-price';
 
 const router = Router();
 const quoteInput = z.object({ country: z.string().min(2).max(80), weightKg: z.coerce.number().nonnegative().default(0) });
@@ -14,7 +15,7 @@ router.post('/quote', async (request, response, next) => {
     const country = input.country.toUpperCase();
     const zone = zones.find((candidate) => Array.isArray(candidate.countries) && candidate.countries.some((value) => String(value).toUpperCase() === country));
     if (!zone) return response.status(404).json({ error: 'No shipping methods available for this destination' });
-    return response.json({ data: zone.methods.map((method) => ({ id: method.id, name: method.name, description: method.description, price: Number((Number(method.rateType === 'FLAT' ? method.flatRate : Number(method.flatRate) + Number(method.perKgRate) * input.weightKg)).toFixed(2)), estimatedDays: { min: method.minDays, max: method.maxDays } })) });
+    return response.json({ data: zone.methods.map((method) => ({ id: method.id, name: method.name, description: method.description, price: calculateShippingPrice(method.rateType, Number(method.flatRate), Number(method.perKgRate), input.weightKg), estimatedDays: { min: method.minDays, max: method.maxDays } })) });
   } catch (error) { return next(error); }
 });
 

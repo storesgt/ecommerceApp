@@ -10,6 +10,12 @@ const router = Router();
 const providerInput = z.object({ provider: z.literal('paystack'), paymentId: z.string().cuid(), email: z.string().email().optional() });
 const webhookInput = z.object({ eventId: z.string().min(1), reference: z.string().min(1), status: z.enum(['SUCCESS', 'FAILED', 'PROCESSING', 'CANCELLED', 'EXPIRED']) });
 
+export function paymentReturnPath(orderNumber?: string, paymentStatus?: string): string {
+  const search = paymentStatus ? `?paymentStatus=${encodeURIComponent(paymentStatus)}` : '';
+  const tracking = orderNumber ? `#tracking/${encodeURIComponent(orderNumber)}` : '#tracking';
+  return `/index.html${search}${tracking}`;
+}
+
 export function paymentInitializationErrorMessage(error: unknown, provider: string, currency: string): string {
   const message = error instanceof Error ? error.message : 'The payment provider could not start this transaction.';
   if (provider === 'paystack' && /Paystack request failed \(HTTP 403\): Currency not supported by merchant/i.test(message)) {
@@ -19,12 +25,17 @@ export function paymentInitializationErrorMessage(error: unknown, provider: stri
 }
 
 router.get('/paystack/callback', async (request, response, next) => {
+  let orderNumber: string | undefined;
   try {
-    const reference = typeof request.query.reference === 'string' ? request.query.reference : '';
-    const appUrl = process.env.APP_URL || 'http://localhost:4000';
-    if (!reference) return response.redirect(`${appUrl}/index.html#tracking`);
+    const reference = typeof request.query.reference === 'string'
+      ? request.query.reference
+      : typeof request.query.trxref === 'string'
+        ? request.query.trxref
+        : '';
+    if (!reference) return response.redirect(303, paymentReturnPath(undefined, 'reference_missing'));
     const payment = await prisma.payment.findUnique({ where: { reference }, include: { order: true } });
-    if (!payment) return response.redirect(`${appUrl}/index.html#tracking`);
+    if (!payment) return response.redirect(303, paymentReturnPath(undefined, 'not_found'));
+    orderNumber = payment.order.orderNumber;
     const provider = providers.paystack;
     if (provider.configure) {
       const rows = await prisma.appSetting.findMany({ where: { key: { in: ['paystackSecretKey', 'paystackPublicKey', 'paymentGateways'] } } });
@@ -32,15 +43,24 @@ router.get('/paystack/callback', async (request, response, next) => {
       const gateway = Array.isArray(settings.paymentGateways) ? settings.paymentGateways.find((entry) => entry && typeof entry === 'object' && (entry as { id?: string }).id === 'paystack') as Record<string, string> | undefined : undefined;
       provider.configure({ secretKey: gateway?.secretKey || String(settings.paystackSecretKey || ''), publicKey: gateway?.publicKey || String(settings.paystackPublicKey || '') });
     }
-    const result = await provider.verify(reference);
+    let result: Awaited<ReturnType<typeof provider.verify>>;
+    try {
+      result = await provider.verify(reference);
+    } catch (error) {
+      console.error('Paystack callback verification failed:', error);
+      return response.redirect(303, paymentReturnPath(orderNumber, 'verification_pending'));
+    }
     const previousMetadata = typeof payment.metadata === 'object' && payment.metadata ? payment.metadata as Record<string, unknown> : {};
     await prisma.$transaction([
       prisma.payment.update({ where: { id: payment.id }, data: { status: result.status, providerTransactionId: result.providerReference, paidAt: result.status === 'SUCCESS' ? new Date() : payment.paidAt, metadata: { ...previousMetadata, ...(result.metadata || {}), verifiedAt: new Date().toISOString() } } }),
       prisma.order.update({ where: { id: payment.orderId }, data: { paymentStatus: result.status, status: result.status === 'SUCCESS' ? 'CONFIRMED' : ['FAILED', 'CANCELLED', 'EXPIRED'].includes(result.status) ? 'CANCELLED' : payment.order.status } })
     ]);
-    const destination = result.status === 'SUCCESS' ? `tracking/${encodeURIComponent(payment.order.orderNumber)}` : 'checkout';
-    return response.redirect(`${appUrl}/index.html#${destination}`);
-  } catch (error) { return next(error); }
+    return response.redirect(303, paymentReturnPath(orderNumber, result.status === 'SUCCESS' ? undefined : result.status.toLowerCase()));
+  } catch (error) {
+    console.error('Paystack callback processing failed:', error);
+    if (response.headersSent) return next(error);
+    return response.redirect(303, paymentReturnPath(orderNumber, 'verification_pending'));
+  }
 });
 
 router.post('/initialize', requireAuth, async (request, response, next) => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import { normalizeKycSubmitBody } from '../server/src/modules/users';
-import { paymentInitializationErrorMessage } from '../server/src/modules/payments';
+import { paymentInitializationErrorMessage, paymentReturnPath } from '../server/src/modules/payments';
 import { PaystackProvider, providers } from '../server/src/payments/adapters';
 
 test('unsupported Paystack currency errors explain the required currency configuration', () => {
@@ -14,6 +14,11 @@ test('unsupported Paystack currency errors explain the required currency configu
 
 test('payment initialization preserves unrelated provider errors', () => {
   assert.equal(paymentInitializationErrorMessage(new Error('Network unavailable'), 'paystack', 'GHS'), 'Network unavailable');
+});
+
+test('Paystack returns use a same-origin storefront route and preserve order tracking', () => {
+  assert.equal(paymentReturnPath('ORD-20261126-AB12'), '/index.html#tracking/ORD-20261126-AB12');
+  assert.equal(paymentReturnPath('ORD / 1', 'verification_pending'), '/index.html?paymentStatus=verification_pending#tracking/ORD%20%2F%201');
 });
 
 test('Paystack webhook signatures accept the exact HMAC digest', () => {

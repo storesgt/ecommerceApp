@@ -10,7 +10,6 @@ const router = Router();
 const createOrderInput = z.object({
   items: z.array(z.object({ productId: z.string().cuid(), quantity: z.number().int().min(1).max(100) })).min(1).max(50),
   addressId: z.string().cuid().optional(),
-  shippingMethodId: z.string().min(1).max(100).optional(),
   email: z.string().email().optional(),
   provider: z.literal('paystack').default('paystack'),
   currency: z.string().length(3).default('USD'),
@@ -28,7 +27,7 @@ function orderNumber() {
 router.get('/', requireAuth, async (request, response, next) => {
   try {
     const ownOrdersOnly = request.query.scope === 'mine' || request.header('x-client-area') === 'storefront';
-    const orders = await prisma.order.findMany({ where: ownOrdersOnly || request.user!.role === 'CUSTOMER' ? { userId: request.user!.id } : {}, include: { user: { select: { firstName: true, lastName: true, email: true, phone: true } }, items: { include: { product: { select: { images: { orderBy: { sortOrder: 'asc' }, select: { url: true, altText: true } } } } } }, refunds: { select: { id: true, orderItemId: true, quantity: true, status: true } }, payments: { select: { id: true, reference: true, provider: true, status: true, amount: true, currency: true, paymentMethod: true, providerTransactionId: true, paidAt: true, metadata: true } }, address: true }, orderBy: { createdAt: 'desc' } });
+    const orders = await prisma.order.findMany({ where: ownOrdersOnly || request.user!.role === 'CUSTOMER' ? { userId: request.user!.id } : {}, include: { user: { select: { firstName: true, lastName: true, email: true, phone: true } }, items: { include: { product: { select: { images: { orderBy: { sortOrder: 'asc' }, select: { url: true, altText: true } } } } } }, refunds: { select: { id: true, orderItemId: true, quantity: true, status: true } }, payments: { select: { id: true, reference: true, provider: true, status: true, amount: true, currency: true, paymentMethod: true, providerTransactionId: true, paidAt: true, metadata: true } }, address: true, deliveryNegotiation: { include: { approvedShippingMethod: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' } });
     return response.json({ data: orders.map((order) => ({ ...order, status: order.status === 'RETURN_REQUESTED' ? 'DELIVERED' : order.status })) });
   } catch (error) { return next(error); }
 });
@@ -54,14 +53,6 @@ router.post('/', requireAuth, async (request, response, next) => {
         return { product, quantity: item.quantity };
       });
       let shipping = 0;
-      if (input.shippingMethodId) {
-        const method = await transaction.shippingMethod.findFirst({ where: { id: input.shippingMethodId, active: true, zone: { active: true } } });
-        if (!method) throw new HttpError(400, 'Selected shipping method is unavailable');
-        shipping = Number(method.flatRate);
-      }
-      const freeShippingSetting = await transaction.appSetting.findUnique({ where: { key: 'freeShippingThreshold' } });
-      const freeShippingThreshold = Number(freeShippingSetting?.value ?? 0);
-      if (freeShippingThreshold > 0 && subtotal >= freeShippingThreshold) shipping = 0;
       let discount = 0;
       let coupon: { id: string; active: boolean; type: string; value: unknown; minimumOrder: unknown; maximumDiscount: unknown; usageLimit: number | null; usedCount: number; startsAt: Date | null; expiresAt: Date | null } | null = null;
       if (input.couponCode) {
@@ -100,7 +91,8 @@ router.post('/', requireAuth, async (request, response, next) => {
         });
         if (redemption.count !== 1) throw new HttpError(409, 'Coupon usage limit reached');
       }
-      const created = await transaction.order.create({ data: { orderNumber: orderNumber(), userId: request.user!.id, addressId: input.addressId, subtotal, discount, tax, shipping, serviceFee, total, currency: input.currency.toUpperCase(), notes: input.notes, items: { create: items.map(({ product, quantity }) => ({ productId: product.id, name: product.name, sku: product.sku, unitPrice: product.price, quantity })) }, payments: { create: { provider: input.provider, reference: `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, amount: total, currency: input.currency.toUpperCase(), status: 'PENDING', metadata: input.email ? { email: input.email } : undefined } } }, include: { items: true, payments: true } });
+      const orderNotes = [input.notes?.trim(), 'Courier team to arrange delivery and collect the delivery fee separately.'].filter(Boolean).join('\n');
+      const created = await transaction.order.create({ data: { orderNumber: orderNumber(), userId: request.user!.id, addressId: input.addressId, subtotal, discount, tax, shipping, serviceFee, total, currency: input.currency.toUpperCase(), notes: orderNotes, items: { create: items.map(({ product, quantity }) => ({ productId: product.id, name: product.name, sku: product.sku, unitPrice: product.price, quantity })) }, payments: { create: { provider: input.provider, reference: `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, amount: total, currency: input.currency.toUpperCase(), status: 'PENDING', metadata: input.email ? { email: input.email } : undefined } } }, include: { items: true, payments: true } });
       if (coupon) await transaction.couponRedemption.create({ data: { couponId: coupon.id, userId: request.user!.id, orderId: created.id, amount: discount } });
       await transaction.notification.create({ data: { userId: request.user!.id, type: 'ORDER_PLACED', title: 'Order received', body: `Your order ${created.orderNumber} has been received.`, metadata: { orderId: created.id, orderNumber: created.orderNumber } } });
       for (const { product, quantity } of items) {

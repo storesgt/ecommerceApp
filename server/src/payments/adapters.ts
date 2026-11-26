@@ -37,7 +37,7 @@ export class PaystackProvider extends ConfiguredProvider {
     if (!this.signingSecret) return null;
     let response: Response;
     try {
-      response = await fetch(`https://api.paystack.co${path}`, { ...init, headers: { Authorization: `Bearer ${this.signingSecret}`, 'Content-Type': 'application/json', ...(init.headers || {}) } });
+      response = await fetch(`https://api.paystack.co${path}`, { ...init, signal: init.signal || AbortSignal.timeout(10000), headers: { Authorization: `Bearer ${this.signingSecret}`, 'Content-Type': 'application/json', ...(init.headers || {}) } });
     } catch (error) {
       throw new Error(`Unable to reach Paystack: ${error instanceof Error ? error.message : String(error)}`);
     }

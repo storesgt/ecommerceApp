@@ -142,6 +142,60 @@ normalizeOrderFilters();
 let adminOrders = [];
 let ordersPage = 1;
 const adminPageSize = 8;
+const deliveryNegotiationsAdmin = document.querySelector('#deliveryNegotiationsAdmin');
+let adminDeliveryNegotiations = [];
+function renderDeliveryNegotiations() {
+  if (!deliveryNegotiationsAdmin) return;
+  const pending = adminDeliveryNegotiations.filter((request) => request.status === 'PENDING');
+  deliveryNegotiationsAdmin.innerHTML = adminDeliveryNegotiations.length ? adminDeliveryNegotiations.map((request) => {
+    const customer = `${request.user?.firstName || 'Customer'} ${request.user?.lastName || ''}`.trim();
+    const methods = request.availableMethods || [];
+    const approvalControls = request.status === 'PENDING' ? `<div class="delivery-negotiation-review"><p>Courier team will agree delivery pricing with the customer separately. Do not collect a delivery fee through checkout.</p><label>Approved method<select data-negotiation-method required><option value="">Choose a configured method</option>${methods.map((method) => `<option value="${escapeHtml(method.id)}">${escapeHtml(method.name)} · ${method.estimatedDays.min}-${method.estimatedDays.max} days</option>`).join('')}</select></label><label>Response / decline reason<textarea data-negotiation-response maxlength="1000" rows="2" placeholder="Required when declining"></textarea></label><div><button type="button" class="primary-button" data-negotiation-action="APPROVED" ${methods.length ? '' : 'disabled'}>Approve method</button><button type="button" class="ghost-button" data-negotiation-action="DECLINED">Decline</button></div>${methods.length ? '' : '<small>No active shipping method currently serves this country. Configure one before approval.</small>'}</div>` : `<p class="delivery-negotiation-response">${escapeHtml(request.responseNote || (request.status === 'APPROVED' ? `Approved: ${request.approvedShippingMethod?.name || 'method'}` : request.status))}</p>${['APPROVED', 'USED'].includes(request.status) ? `<p>Courier team follow-up: agree and collect delivery pricing separately.${request.order?.orderNumber ? ` Order ${escapeHtml(request.order.orderNumber)}.` : ''}</p>` : ''}`;
+    return `<article class="delivery-negotiation-card" data-negotiation-id="${escapeHtml(request.id)}"><div class="delivery-negotiation-card-heading"><div><strong>${escapeHtml(request.requestedMethod)}</strong><small>${escapeHtml(customer)} · ${escapeHtml(request.user?.email || '')} · ${escapeHtml(request.country)} · ${Number(request.weightKg || 0)} kg · ${new Date(request.createdAt).toLocaleString()}</small></div><span class="delivery-negotiation-status ${request.status.toLowerCase()}">${escapeHtml(request.status)}</span></div>${request.note ? `<p>${escapeHtml(request.note)}</p>` : ''}${approvalControls}</article>`;
+  }).join('') : '<p class="table-empty">No delivery method requests yet.</p>';
+  const heading = deliveryNegotiationsAdmin.closest('.delivery-negotiations-admin')?.querySelector('h3');
+  if (heading) heading.textContent = `Delivery method review${pending.length ? ` · ${pending.length} pending` : ''}`;
+}
+async function loadDeliveryNegotiations() {
+  if (!deliveryNegotiationsAdmin || !adminApiHeaders() || !roleCanAccess('shipping.update')) return;
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/shipping/negotiations/admin`, { headers: adminApiHeaders() });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Could not load delivery method requests.');
+    adminDeliveryNegotiations = result.data || [];
+    renderDeliveryNegotiations();
+  } catch (error) {
+    deliveryNegotiationsAdmin.innerHTML = `<p class="table-empty">${escapeHtml(error.message || 'Could not load delivery method requests.')}</p>`;
+  }
+}
+document.querySelector('#refreshDeliveryNegotiations')?.addEventListener('click', () => void loadDeliveryNegotiations());
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-negotiation-action]');
+  if (!button) return;
+  const card = button.closest('.delivery-negotiation-card');
+  const request = card && adminDeliveryNegotiations.find((item) => item.id === card.dataset.negotiationId);
+  if (!card || !request) return;
+  const status = button.dataset.negotiationAction;
+  const responseNote = String(card.querySelector('[data-negotiation-response]')?.value || '').trim();
+  const shippingMethodId = String(card.querySelector('[data-negotiation-method]')?.value || '');
+  if (status === 'APPROVED' && !shippingMethodId) return showToast('Choose the final delivery method.', 'error');
+  if (status === 'DECLINED' && !responseNote) return showToast('Add a reason before declining the request.', 'error');
+  button.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/shipping/negotiations/${encodeURIComponent(request.id)}`, {
+      method: 'PATCH',
+      headers: adminApiHeaders(),
+      body: JSON.stringify({ status, shippingMethodId: status === 'APPROVED' ? shippingMethodId : undefined, responseNote: responseNote || undefined })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.message || result.error || 'Could not review this request.');
+    showToast(status === 'APPROVED' ? 'Delivery method approved.' : 'Delivery method request declined.');
+    await loadDeliveryNegotiations();
+  } catch (error) {
+    showToast(error.message || 'Could not review this request.', 'error');
+    button.disabled = false;
+  }
+});
 function renderAttentionOrders() {
   const container = document.querySelector('#attentionOrders');
   const summary = document.querySelector('#attentionSummary');
@@ -213,8 +267,10 @@ const adminAuthGranted = (user) => {
   if (couponCreateButton) couponCreateButton.hidden = !['ADMIN', 'SUPER_ADMIN'].includes(currentAdminRole);
   document.querySelector('.settings-detail-link')?.toggleAttribute('hidden', !canManageCommerceDefaults());
   document.querySelector('#settingsDetails')?.toggleAttribute('hidden', location.hash !== '#settingsDetails' || !canManageCommerceDefaults());
+  document.querySelector('.delivery-negotiations-admin')?.toggleAttribute('hidden', !roleCanAccess('shipping.update'));
   rebuildAdminSidebar(currentAdminRole);
   enforceStaffCatalogRestrictions();
+  void loadDeliveryNegotiations();
   if (typeof loadUsers === 'function') void loadUsers();
   if (typeof loadCustomers === 'function') void loadCustomers();
 };

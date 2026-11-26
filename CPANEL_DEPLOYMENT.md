@@ -90,10 +90,18 @@ Use either **Git Version Control** in cPanel or upload a ZIP of the repository
 with File Manager. Put the repository contents directly in
 `~/apps/ecommerceApp`—do not leave them one directory lower.
 
-The application root must include `package.json`, `package-lock.json`,
-`prisma/`, `server/`, `index.html`, `admin.html`, `app.js`, `admin.js`,
-`styles.css`, `admin.css`, and `runtime-config.js`. Do not upload
-`node_modules`; it will be installed on the server.
+Upload the full repository contents so the build has all of its inputs. At a
+minimum, verify the application root includes `package.json`,
+`package-lock.json`, `tsconfig.json`, `.env.example`, `prisma/schema.prisma`,
+`prisma/migrations/`, `prisma/seed.ts`, `server/`, and these storefront files:
+`index.html`, `admin.html`, `app.js`, `admin.js`, `styles.css`, `admin.css`,
+`runtime-config.js`, `brand-theme.js`, and `favicon.svg`. The build also needs
+`tracking-map-entry.js`, `tracking-map-leaflet-inject.js`, and
+`invoice-pdf-entry.js`.
+
+Do not upload `node_modules`; it will be installed on the server. The
+`npm run build` command creates `dist/`, `tracking-map.bundle.js`, and
+`invoice-pdf.bundle.js` from the uploaded source.
 
 Open cPanel Terminal and move to the application root:
 
@@ -268,9 +276,22 @@ Expected results:
 
 Then open the storefront in a browser, create or sign in to the seeded
 administrator at `/admin.html`, and confirm the dashboard loads. Set the store
-name, currency, shipping/tax settings, and Paystack configuration before
-accepting real orders. Use Paystack test credentials to test a complete order
-before switching to live credentials.
+name, currency, and shipping/tax settings in the admin dashboard. Open
+**Settings → Paystack**, enter your Paystack test public and secret keys, and
+save. Keep the secret key private; do not put it in storefront code or share
+it. The `PAYSTACK_SECRET_KEY` environment variable is also supported as a
+private fallback when no secret key is saved in admin settings.
+
+The payment-return URL is generated from `APP_URL` as
+`https://shop.example.com/api/v1/payments/paystack/callback`; make sure it uses
+the public HTTPS address customers visit, not `localhost` or a server port.
+Set the store currency to one enabled for your Paystack account; the app does
+not convert prices automatically.
+
+Place a complete test order using Paystack test credentials and confirm it is
+marked paid in the admin dashboard. Only after that succeeds, replace the test
+keys with your Paystack live keys and verify the store is configured for the
+intended live currency before accepting real orders.
 
 ## 8. Updating the site
 

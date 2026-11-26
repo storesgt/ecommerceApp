@@ -13,7 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20261125-tracking-complete-11" />
+  <link rel="stylesheet" href="styles.css?v=20261126-checkout-address-cards-1" />
   <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
 </head>
 
@@ -135,7 +135,7 @@
     <div class="cart-items" id="cartItems"></div>
     <div class="cart-footer">
       <div class="subtotal"><span>Subtotal</span><strong id="subtotal">$0</strong></div>
-      <p>Shipping calculated at checkout.</p><button class="checkout-button" id="checkoutButton">Continue to checkout
+      <p>Courier delivery is arranged separately; the fee is paid directly to the courier.</p><button class="checkout-button" id="checkoutButton">Continue to checkout
         <span>↗</span></button>
     </div>
   </aside>
@@ -192,7 +192,7 @@
       <div>
         <p class="eyebrow">Ground checkout</p>
         <h2>Make it yours.</h2>
-      </div><button class="modal-close" id="checkoutClose" aria-label="Close checkout">×</button>
+      </div><div class="checkout-header-actions"><button type="button" class="page-secondary" data-continue-shopping>Continue shopping</button><button class="modal-close" id="checkoutClose" aria-label="Close checkout">×</button></div>
     </div>
     <div class="checkout-steps"><span class="active" data-step-label="1">Details</span><span
         data-step-label="2">Delivery</span><span data-step-label="3">Payment</span></div>
@@ -217,8 +217,8 @@
             <option value="GH">Ghana</option>
             <option value="GB">United Kingdom</option>
           </select></label>
-        <div class="delivery-option" id="deliveryOptions"><span><strong>Choose delivery</strong><small>Enter your
-              destination to see available methods.</small></span><b>$0</b></div><button class="checkout-next"
+        <div class="delivery-option courier-delivery-notice" id="deliveryOptions"><span><strong>Courier-arranged delivery</strong><small>The courier team will contact you to arrange delivery and collect the delivery fee separately.</small></span><b>Quoted separately</b></div>
+        <button class="checkout-next"
           type="submit">Continue to payment <span>↗</span></button>
       </section>
       <section class="checkout-step" data-step="3">
@@ -243,7 +243,7 @@
           autocomplete="off"></label><button type="button" class="page-secondary" data-apply-coupon>Apply</button><small
         data-coupon-message></small></div>
     <div class="published-coupons" id="publishedCoupons" hidden><div class="published-coupons-heading"><div><p class="published-coupons-kicker">A little extra</p><p class="published-coupons-title">Available offers</p></div><span class="published-coupons-count" data-offer-count></span></div><div class="published-coupons-list" data-published-coupons></div></div>
-    <div class="checkout-summary-lines"><span>Discount <b id="checkoutDiscount">-$0.00</b></span><span>Tax <b
+    <div class="checkout-summary-lines"><span>Subtotal <b id="checkoutSubtotal">$0.00</b></span><span>Discount <b id="checkoutDiscount">-$0.00</b></span><span>Tax <b
           id="checkoutTax">$0.00</b></span></div>
     <div class="checkout-total"><span>Total</span><strong id="checkoutTotal">$0</strong></div>
     <div class="checkout-support-note"><span>Need help completing your order?</span><a class="support-whatsapp-link" data-support-whatsapp-link data-support-whatsapp-message="Hello, I need help completing my checkout." href="#" target="_blank" rel="noopener noreferrer" hidden><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> WhatsApp support</a></div>
@@ -360,7 +360,7 @@
   <script src="runtime-config.js?v=20260911"></script>
   <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
   <script src="invoice-pdf.bundle.js?v=20261126-invoice-2"></script>
-  <script src="app.js?v=20261126-invoice-2"></script>
+  <script src="app.js?v=20261126-checkout-address-cards-1"></script>
 </body>
 
 </html>

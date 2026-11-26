@@ -36,7 +36,9 @@ if (legacyToken && !localStorage.getItem(CLIENT_TOKEN_KEY) && !localStorage.getI
   localStorage.setItem(CLIENT_TOKEN_KEY, legacyToken);
 }
 let activeCategory = 'All'; let query = ''; let cart = []; let wishlist = new Set(); let activeUserId = ''; let selectedProduct = null; let modalQuantity = 1; let checkoutStep = 1; let accountMode = 'login'; let storeOpen = true; let currencyCode = 'USD'; let configuredPaymentProvider = 'paystack';
-let checkoutOrderNumber = ''; let checkoutPaymentId = ''; let selectedShippingMethod = null; let appliedCoupon = null; let checkoutTax = 0; let taxEnabled = false; let availableCountries = [{ code: 'GH', name: 'Ghana', rate: 15 }, { code: 'US', name: 'United States', rate: 0 }, { code: 'GB', name: 'United Kingdom', rate: 20 }]; let availablePaymentGateways = [{ id: 'paystack', name: 'Paystack', enabled: true, serviceFee: 0.2 }]; let selectedPaymentProvider = 'paystack'; let selectedImageIndex = 0; let zoomedProductImage = false;
+let checkoutOrderNumber = ''; let checkoutPaymentId = ''; let appliedCoupon = null; let checkoutTax = 0; let taxEnabled = false; let shippingQuoteRequestId = 0; let taxQuoteRequestId = 0; let checkoutPendingAuth = false; let preserveLocalCartOnAuth = false; let availableCountries = [{ code: 'GH', name: 'Ghana', rate: 15 }, { code: 'US', name: 'United States', rate: 0 }, { code: 'GB', name: 'United Kingdom', rate: 20 }]; let availablePaymentGateways = [{ id: 'paystack', name: 'Paystack', enabled: true, serviceFee: 0.2 }]; let selectedPaymentProvider = 'paystack'; let selectedImageIndex = 0; let zoomedProductImage = false;
+const checkoutAddresses = new WeakMap();
+const checkoutAddressUi = new WeakMap();
 const $ = (selector) => document.querySelector(selector);
 const appPage = $('#appPage');
 const pageNames = { home: 'Shop', profile: 'Profile', kyc: 'Staff KYC', orders: 'Orders', notifications: 'Notifications', checkout: 'Checkout', tracking: 'Track order', about: 'About', contact: 'Contact' };
@@ -44,9 +46,20 @@ const showStorePage = () => { window.destroyDeliveryRouteMap?.(); appPage.hidden
 const normalizePageCheckoutGpsField = () => { const field = document.querySelector('#pageCheckoutForm input[name="postal"]'); if (!field) return; field.name = 'gpsAddress'; field.removeAttribute('required'); field.removeAttribute('pattern'); field.setAttribute('autocomplete', 'street-address'); const label = field.closest('label'); if (label?.firstChild) label.firstChild.textContent = 'GPS address / landmark (optional) '; };
 const countryOptions = (includePlaceholder = false) => `${includePlaceholder ? '<option value="" selected disabled>Choose a country</option>' : ''}${availableCountries.map((country) => `<option value="${escapeHtml(country.code)}">${escapeHtml(country.name)}</option>`).join('')}`;
 function renderCountryOptions() { document.querySelectorAll('select[name="country"]').forEach((select) => { const current = select.value; select.innerHTML = countryOptions(select.id === 'shippingCountry'); if ([...select.options].some((option) => option.value === current)) select.value = current; }); }
-const showAppPage = (name, content, options = {}) => { const preserveScroll = options.preserveScroll === true; const scrollY = preserveScroll ? window.scrollY : 0; appPage.innerHTML = `<div class="page-frame"><div class="page-kicker"><span>Ground / ${pageNames[name] || 'Account'}</span><a href="#shop" data-page-link="home">Back to shop <b>↗</b></a></div>${content}</div>`; if (name === 'checkout') renderPaymentProviders(); appPage.hidden = false; $('#top').hidden = true; document.body.classList.add('page-active'); if (preserveScroll) window.scrollTo({ top: scrollY, behavior: 'auto' }); else window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => { void hydrateTrackingItems(); if (name === 'checkout') { normalizePageCheckoutGpsField(); renderCountryOptions(); void enhanceCheckoutAddressSelector('#pageCheckoutForm'); hydrateCheckoutControls('#pageCheckoutForm'); void loadTaxQuote($('#pageCheckoutForm')).catch((error) => showToast(error.message)); } if (name === 'profile') void renderAddressBook(); }, 0); };
-const requireClientPage = (name, content, options = {}) => { if (!authToken) { showToast('Sign in to view your account'); $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); return; } showAppPage(name, content, options); };
+const showAppPage = (name, content, options = {}) => { const preserveScroll = options.preserveScroll === true; const scrollY = preserveScroll ? window.scrollY : 0; appPage.innerHTML = `<div class="page-frame"><div class="page-kicker"><span>Ground / ${pageNames[name] || 'Account'}</span><a href="#shop" data-page-link="home">Back to shop <b>↗</b></a></div>${content}</div>`; if (name === 'checkout') { renderPaymentProviders(); appPage.querySelector('.page-heading')?.insertAdjacentHTML('beforeend', '<button type="button" class="page-secondary checkout-continue-shopping" data-continue-shopping>Continue shopping</button>'); } appPage.hidden = false; $('#top').hidden = true; document.body.classList.add('page-active'); if (preserveScroll) window.scrollTo({ top: scrollY, behavior: 'auto' }); else window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => { void hydrateTrackingItems(); if (name === 'checkout') { normalizePageCheckoutGpsField(); renderCountryOptions(); void enhanceCheckoutAddressSelector('#pageCheckoutForm'); hydrateCheckoutControls('#pageCheckoutForm'); void loadShippingQuote($('#pageCheckoutForm')).catch((error) => showToast(error.message)); } if (name === 'profile') void renderAddressBook(); }, 0); };
+const requireClientPage = (name, content, options = {}) => { if (!authToken) { preserveLocalCartOnAuth = cart.length > 0; showToast('Sign in to view your account'); $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); return; } showAppPage(name, content, options); };
 const accountPageHeader = (eyebrow, title, copy) => `<header class="page-heading"><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p>${copy}</p></header>`;
+function promptCheckoutSignIn() {
+  void showToast('Sign in before checkout').then((result) => {
+    if (result && !result.isConfirmed) return;
+    checkoutPendingAuth = true;
+    preserveLocalCartOnAuth = true;
+    setAccountMode('login');
+    $('#accountModal').classList.add('open');
+    $('#accountModal').setAttribute('aria-hidden', 'false');
+    $('#overlay').classList.add('visible');
+  });
+}
 const orderStatusSteps = [
   { key: 'PENDING', label: 'Pending', icon: '⏳', detail: 'We have your order and are preparing it.' },
   { key: 'CONFIRMED', label: 'Confirmed', icon: '✓', detail: 'Your order is confirmed and being prepared.' },
@@ -121,26 +134,66 @@ function applySavedAddress(form, address) {
   set('address', address.addressLine1);
   set('city', address.city);
   set('gpsAddress', address.instructions);
+  form.dataset.checkoutAddressId = address.id;
   applyCheckoutFieldValidation(form);
   form.querySelector('select[name="country"]')?.dispatchEvent(new Event('change', { bubbles: true }));
 }
 async function enhanceCheckoutAddressSelector(formSelector) {
   const form = document.querySelector(formSelector);
-  if (!form || form.querySelector('.saved-address-control')) return;
-  const addresses = await fetchSavedAddresses();
-  if (!addresses.length) return;
-  const control = document.createElement('div');
-  control.className = 'saved-address-control';
-  control.innerHTML = `<label>Use a saved address<select name="savedAddress"><option value="">Enter a new address</option>${addresses.map((address) => `<option value="${escapeHtml(address.id)}">${escapeHtml(address.fullName)} · ${escapeHtml(address.addressLine1)}, ${escapeHtml(address.city)}</option>`).join('')}</select></label><button type="button" class="page-secondary saved-address-clear">Clear</button>`;
-  form.prepend(control);
-  control.querySelector('select').addEventListener('change', (event) => {
-    const address = addresses.find((item) => item.id === event.target.value);
-    if (address) applySavedAddress(form, address);
+  if (!form || form.querySelector('.checkout-address-picker')) return;
+  let response;
+  try {
+    response = await fetch('http://localhost:4000/api/v1/addresses', { headers: apiHeaders() });
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Unable to load saved addresses.');
+    return;
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    showToast(payload.message || payload.error || 'Unable to load saved addresses.');
+    return;
+  }
+  const addresses = Array.isArray(payload.data) ? payload.data : [];
+  checkoutAddresses.set(form, addresses);
+
+  const addressFieldNames = new Set(['address', 'city', 'gpsAddress', 'postal', 'country']);
+  const addressLabels = [...form.querySelectorAll('label')].filter((label) => {
+    const field = label.querySelector('input, select');
+    return field && addressFieldNames.has(field.name);
   });
-  control.querySelector('.saved-address-clear').addEventListener('click', () => { control.querySelector('select').value = ''; form.reset(); });
+  if (!addressLabels.length) return;
+
+  const picker = document.createElement('section');
+  picker.className = 'checkout-address-picker';
+  picker.innerHTML = `<div class="checkout-address-heading"><div><span class="checkout-section-kicker">DELIVERY ADDRESS</span><strong>Choose where to send your order</strong></div><span class="checkout-address-count">${addresses.length ? `${addresses.length} saved` : 'New address'}</span></div><div class="checkout-address-list" role="group" aria-label="Saved delivery addresses"></div><button type="button" class="checkout-add-address" data-checkout-add-address><span aria-hidden="true">＋</span> Add a new address</button>`;
+  const fields = document.createElement('div');
+  fields.className = 'checkout-new-address-fields';
+  fields.hidden = addresses.length > 0;
+  addressLabels[0].before(picker);
+  addressLabels[0].before(fields);
+  addressLabels.forEach((label) => fields.append(label));
+  fields.insertAdjacentHTML('beforeend', '<button type="button" class="page-secondary checkout-save-address" data-checkout-save-address>Save address to my account</button><p class="checkout-address-message" data-checkout-address-message aria-live="polite"></p>');
+
+  const renderAddresses = (selectedId = '') => {
+    const list = picker.querySelector('.checkout-address-list');
+    const count = picker.querySelector('.checkout-address-count');
+    if (count) count.textContent = addresses.length ? `${addresses.length} saved` : 'No saved addresses';
+    if (!list) return;
+    list.innerHTML = addresses.length ? addresses.map((address) => {
+      const selected = address.id === selectedId;
+      const country = availableCountries.find((item) => item.code === normalizeCountryCode(address.country))?.name || address.country;
+      return `<button type="button" class="checkout-address-card${selected ? ' selected' : ''}" data-checkout-address-id="${escapeHtml(address.id)}" aria-pressed="${selected}"><span class="checkout-address-radio" aria-hidden="true"></span><span class="checkout-address-copy"><strong>${escapeHtml(address.fullName)}</strong><small>${escapeHtml(address.addressLine1)}${address.addressLine2 ? `, ${escapeHtml(address.addressLine2)}` : ''}</small><small>${escapeHtml(address.city)}, ${escapeHtml(country)} · ${escapeHtml(address.phone)}</small></span>${address.isDefault ? '<span class="checkout-address-default">Default</span>' : ''}</button>`;
+    }).join('') : '<p class="checkout-address-empty">Add an address to make checkout faster next time.</p>';
+  };
+  renderAddresses();
   const defaultAddress = addresses.find((address) => address.isDefault) || addresses[0];
-  control.querySelector('select').value = defaultAddress.id;
-  applySavedAddress(form, defaultAddress);
+  if (defaultAddress) {
+    renderAddresses(defaultAddress.id);
+    applySavedAddress(form, defaultAddress);
+    fields.hidden = true;
+  }
+  picker.dataset.addressListReady = 'true';
+  checkoutAddressUi.set(form, { renderAddresses, fields });
 }
 async function renderAddressBook() {
   const frame = appPage.querySelector('.page-frame');
@@ -212,7 +265,7 @@ clientProfileTabObserver.observe(appPage, { childList: true, subtree: true });
 async function renderOrdersPage() { if (!authToken) return; const response = await fetch('http://localhost:4000/api/v1/orders', { headers: apiHeaders() }); const orders = response.ok ? (await response.json()).data || [] : []; requireClientPage('orders', `${accountPageHeader('Order history', 'Every order, in one place.', 'Follow delivery progress, download receipts, and keep the full story of each purchase.')}<section class="page-panel orders-page-panel"><div class="panel-label">Your transactions <span>${orders.length} orders</span></div><div class="orders-page-list">${orders.length ? orders.map((order) => { const timeline = getOrderStatusTimeline(order.status); const canReturn = ['DELIVERED', 'RETURNED'].includes(String(order.status).toUpperCase()) && order.items?.length; const returnForm = canReturn ? `<details class="return-request"><summary>Return an item</summary><form data-return-form="${escapeHtml(order.id)}" class="page-form"><label>Item<select name="orderItemId" required>${order.items.map((item) => `<option value="${escapeHtml(item.id)}" data-unit-price="${Number(item.unitPrice)}" data-max-quantity="${item.quantity}">${escapeHtml(item.name)} · ${money(item.unitPrice)} each</option>`).join('')}</select></label><label>Quantity<input name="quantity" type="number" min="1" max="${order.items[0]?.quantity || 1}" value="1" required></label><label>Reason<textarea name="reason" rows="3" minlength="5" maxlength="500" placeholder="Tell us why you are returning this item." required></textarea></label><label>Refund amount<input name="amount" type="number" min="0.01" step="0.01" value="${Number(order.items[0]?.unitPrice || 0).toFixed(2)}" required></label><button class="page-primary" type="submit">Submit return request <span>↗</span></button><p class="page-message" data-return-message></p></form></details>` : ''; return `<article class="order-page-card"><div class="order-page-top"><div><span class="order-number">${escapeHtml(order.orderNumber)}</span><h2>${escapeHtml(order.status.replaceAll('_', ' '))}</h2><p>${new Date(order.createdAt).toLocaleDateString()} · ${money(order.total)} ${escapeHtml(order.currency)}</p></div><div class="order-actions"><button class="page-secondary" data-track-order="${escapeHtml(order.orderNumber)}">Track order <span>→</span></button>${order.orderNumber ? `<button class="page-secondary" data-view-receipt="${escapeHtml(order.orderNumber)}">Invoice <span>↓</span></button>` : ''}</div></div><div class="order-line">${timeline.completed.map((step) => `<span class="${step.complete ? 'complete' : ''}"></span>`).join('')}</div><div class="order-line-labels">${timeline.completed.map((step) => `<span>${escapeHtml(step.label)}</span>`).join('')}</div>${returnForm}</article>`; }).join('') : '<p class="page-empty">No orders yet. Your first purchase will appear here.</p>'}</div></section>`); document.querySelectorAll('[data-return-form]').forEach((form) => { const itemSelect = form.elements.orderItemId; const quantity = form.elements.quantity; const amount = form.elements.amount; const sync = () => { const option = itemSelect.selectedOptions[0]; const max = Number(option?.dataset.maxQuantity || 1); quantity.max = String(max); quantity.value = String(Math.min(Number(quantity.value) || 1, max)); amount.value = (Number(option?.dataset.unitPrice || 0) * Number(quantity.value || 1)).toFixed(2); }; itemSelect.addEventListener('change', sync); quantity.addEventListener('input', sync); form.addEventListener('submit', async (event) => { event.preventDefault(); const data = new FormData(form); const message = form.querySelector('[data-return-message]'); try { const result = await fetch('http://localhost:4000/api/v1/refunds', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ orderId: form.dataset.returnForm, orderItemId: data.get('orderItemId'), quantity: Number(data.get('quantity')), amount: Number(data.get('amount')), reason: data.get('reason') }) }); const payload = await result.json().catch(() => ({})); if (!result.ok) throw new Error(payload.error || 'Could not submit return request.'); message.textContent = 'Return request submitted. Support will review it shortly.'; form.querySelector('button[type="submit"]').disabled = true; } catch (error) { message.textContent = error.message; } }); }); }
 async function renderNotificationsPage() { if (!authToken) return; const response = await fetch('http://localhost:4000/api/v1/notifications', { headers: apiHeaders() }); const payload = response.ok ? await response.json() : { data: [] }; requireClientPage('notifications', `${accountPageHeader('Your inbox', 'Notifications that matter.', 'Order updates, delivery milestones, and account activity live here.')}<section class="page-panel notifications-page-panel"><div class="panel-label">Recent activity <span>${payload.unread || 0} unread</span></div><div class="page-notification-list">${payload.data?.length ? payload.data.map((notification) => `<article class="page-notification ${notification.readAt ? '' : 'unread'}" data-page-notification="${escapeHtml(notification.id)}"><span class="notification-icon">♢</span><div><strong>${escapeHtml(notification.title || 'Account update')}</strong><p>${escapeHtml(notification.body || '')}</p><small>${new Date(notification.createdAt).toLocaleString()}</small></div><b>${notification.readAt ? 'Read' : 'New'}</b></article>`).join('') : '<p class="page-empty">You are all caught up.</p>'}</div></section>`); }
 async function renderTrackingPageLegacy(orderNumber = '') { if (!authToken) return; const response = await fetch('http://localhost:4000/api/v1/orders', { headers: apiHeaders() }); const orders = response.ok ? (await response.json()).data || [] : []; const order = orders.find((item) => item.orderNumber === orderNumber) || orders[0]; requireClientPage('tracking', `${accountPageHeader('Delivery tracking', 'Track your order.', 'A clear view of where your package is and what happens next.')}<section class="tracking-layout"><form class="page-panel tracking-search" id="trackingSearch"><div class="panel-label">Find an order</div><label>Order number<input name="orderNumber" placeholder="GR-2026-0001" value="${escapeHtml(order?.orderNumber || '')}" required></label><button class="page-primary" type="submit">Track order <span>⌕</span></button></form>${order ? `<article class="page-panel tracking-card"><div class="tracking-summary"><div><span class="order-number">${escapeHtml(order.orderNumber)}</span><h2>${escapeHtml(order.status.replaceAll('_', ' '))}</h2><p>Placed ${new Date(order.createdAt).toLocaleDateString()} · ${money(order.total)} ${escapeHtml(order.currency)}</p></div><span class="tracking-badge">${escapeHtml(order.status.replaceAll('_', ' '))}</span></div><div class="tracking-progress"><span class="active"><i>✓</i><b>Order placed</b><small>Received</small></span><span class="active"><i>✓</i><b>Confirmed</b><small>Processing</small></span><span class="${['PROCESSING', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status) ? 'active' : ''}"><i>✓</i><b>Shipped</b><small>On the way</small></span><span class="${order.status === 'DELIVERED' ? 'active' : ''}"><i>✓</i><b>Delivered</b><small>Arriving soon</small></span></div><div class="tracking-help"><strong>Need help with this order?</strong><p>Our support team can help with delivery questions.</p><button class="page-secondary" type="button" data-page-link="home">Continue shopping</button></div></article>` : '<article class="page-panel page-empty">No matching order found.</article>'}</section>`); $('#trackingSearch').addEventListener('submit', (event) => { event.preventDefault(); renderTrackingPageLegacy(new FormData(event.target).get('orderNumber')); }); }
-function renderCheckoutPage() { if (!authToken) { showToast('Sign in before checkout'); $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); return; } const items = cart.map((item) => `<div class="checkout-line"><img src="${escapeHtml(imageFor(item))}" alt=""><div><strong>${escapeHtml(item.name)}</strong><small>Qty ${item.quantity}</small></div><b>${money(item.price * item.quantity)}</b></div>`).join(''); showAppPage('checkout', `${accountPageHeader('Secure checkout', 'Make it yours.', 'A considered checkout with every detail in the right place.')}<section class="checkout-page-layout"><form class="page-panel page-form" id="pageCheckoutForm"><div class="panel-label">Contact & delivery</div><div class="page-field-grid"><label>First name<input name="firstName" required autocomplete="given-name"></label><label>Last name<input name="lastName" required autocomplete="family-name"></label></div><label>Email address<input type="email" name="email" required autocomplete="email"></label><label>Phone<input type="tel" name="phone" required autocomplete="tel"></label><label>Address<input name="address" required autocomplete="street-address"></label><div class="page-field-grid"><label>City<input name="city" required autocomplete="address-level2"></label><label>Postal code<input name="postal" required autocomplete="postal-code"></label></div><label>Country<select name="country" required><option value="US">United States</option><option value="GH">Ghana</option><option value="GB">United Kingdom</option></select></label><div class="panel-label payment-heading">Payment provider</div><label><select name="provider"><option value="paystack">Paystack</option></select></label><button class="page-primary" type="submit">Place order <span>↗</span></button><p class="page-message" id="checkoutPageMessage"></p></form><aside class="page-panel checkout-summary"><div class="panel-label">Your order</div>${items || '<p class="page-empty">Your bag is empty.</p>'}<div class="checkout-summary-total"><span>Total</span><strong>${money(cart.reduce((sum, item) => sum + item.price * item.quantity, 0))}</strong></div><div class="checkout-support-note"><span>Need help before you pay?</span><a class="support-whatsapp-link" data-support-whatsapp-link data-support-whatsapp-message="Hello, I need help completing my checkout." href="#" target="_blank" rel="noopener noreferrer" hidden><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> WhatsApp support</a></div></aside></section>`); syncSupportWhatsAppLink(); if (authToken) { fetch('http://localhost:4000/api/v1/users/me', { headers: apiHeaders() }).then((response) => response.json()).then((user) => { const form = $('#pageCheckoutForm'); if (!form) return; form.elements.firstName.value = user.data.firstName || ''; form.elements.lastName.value = user.data.lastName || ''; form.elements.email.value = user.data.email || ''; form.elements.phone.value = user.data.phone || ''; }).catch(() => { }); } $('#pageCheckoutForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.target; try { const addressId = await ensureCheckoutAddress(form); const orderResponse = await fetch('http://localhost:4000/api/v1/orders', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ items: cart.map((item) => ({ productId: toServerProductId(item), quantity: Number(item.quantity) })), addressId, email: form.elements.email.value, currency: currencyCode }) }); const result = await orderResponse.json().catch(() => ({})); if (!orderResponse.ok) throw new Error(result.error || 'Unable to create order'); checkoutOrderNumber = result.data.orderNumber; cart = []; saveState(); renderCart(); $('#checkoutPageMessage').textContent = `Order ${checkoutOrderNumber} received. We will keep you updated here.`; form.querySelector('button').disabled = true; } catch (error) { $('#checkoutPageMessage').textContent = error.message; } }); }
+function renderCheckoutPage() { if (!authToken) { promptCheckoutSignIn(); return; } const items = cart.map((item) => `<div class="checkout-line"><img src="${escapeHtml(imageFor(item))}" alt=""><div><strong>${escapeHtml(item.name)}</strong><small>Qty ${item.quantity}</small></div><b>${money(item.price * item.quantity)}</b></div>`).join(''); showAppPage('checkout', `${accountPageHeader('Secure checkout', 'Make it yours.', 'A considered checkout with every detail in the right place.')}<section class="checkout-page-layout"><form class="page-panel page-form" id="pageCheckoutForm"><div class="panel-label">Contact & delivery</div><div class="page-field-grid"><label>First name<input name="firstName" required autocomplete="given-name"></label><label>Last name<input name="lastName" required autocomplete="family-name"></label></div><label>Email address<input type="email" name="email" required autocomplete="email"></label><label>Phone<input type="tel" name="phone" required autocomplete="tel"></label><label>Address<input name="address" required autocomplete="street-address"></label><div class="page-field-grid"><label>City<input name="city" required autocomplete="address-level2"></label><label>Postal code<input name="postal" required autocomplete="postal-code"></label></div><label>Country<select name="country" required><option value="US">United States</option><option value="GH">Ghana</option><option value="GB">United Kingdom</option></select></label><div class="panel-label payment-heading">Payment provider</div><label><select name="provider"><option value="paystack">Paystack</option></select></label><button class="page-primary" type="submit">Place order <span>↗</span></button><p class="page-message" id="checkoutPageMessage"></p></form><aside class="page-panel checkout-summary"><div class="panel-label">Your order</div>${items || '<p class="page-empty">Your bag is empty.</p>'}<div class="checkout-summary-total"><span>Total</span><strong>${money(cart.reduce((sum, item) => sum + item.price * item.quantity, 0))}</strong></div><div class="checkout-support-note"><span>Need help before you pay?</span><a class="support-whatsapp-link" data-support-whatsapp-link data-support-whatsapp-message="Hello, I need help completing my checkout." href="#" target="_blank" rel="noopener noreferrer" hidden><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> WhatsApp support</a></div></aside></section>`); syncSupportWhatsAppLink(); if (authToken) { fetch('http://localhost:4000/api/v1/users/me', { headers: apiHeaders() }).then((response) => response.json()).then((user) => { const form = $('#pageCheckoutForm'); if (!form) return; form.elements.firstName.value = user.data.firstName || ''; form.elements.lastName.value = user.data.lastName || ''; form.elements.email.value = user.data.email || ''; form.elements.phone.value = user.data.phone || ''; }).catch(() => { }); } $('#pageCheckoutForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.target; try { const addressId = await ensureCheckoutAddress(form); const orderResponse = await fetch('http://localhost:4000/api/v1/orders', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ items: cart.map((item) => ({ productId: toServerProductId(item), quantity: Number(item.quantity) })), addressId, email: form.elements.email.value, currency: currencyCode }) }); const result = await orderResponse.json().catch(() => ({})); if (!orderResponse.ok) throw new Error(result.error || 'Unable to create order'); checkoutOrderNumber = result.data.orderNumber; cart = []; saveState(); renderCart(); $('#checkoutPageMessage').textContent = `Order ${checkoutOrderNumber} received. We will keep you updated here.`; form.querySelector('button').disabled = true; } catch (error) { $('#checkoutPageMessage').textContent = error.message; } }); }
 function renderInfoPage(name) { const content = name === 'about' ? `${accountPageHeader('Our point of view', 'Less, but much better.', 'Ground is a considered marketplace for useful objects, honest materials, and the details that make everyday life feel more intentional.')}<section class="info-page-grid"><article class="page-panel"><div class="panel-label">What we look for</div><p>We choose pieces that earn their place through thoughtful function, enduring form, and materials that become more personal with time.</p></article><article class="page-panel"><div class="panel-label">How we work</div><p>We keep the collection focused, work with makers we trust, and make it easier to buy fewer things that are better suited to your life.</p></article></section>` : `${accountPageHeader('Customer care', 'We are here to help.', 'Questions about an order, a product, or finding the right piece? Send us a note and our team will get back to you.')}<section class="contact-layout"><form class="page-panel page-form" id="contactForm"><div class="panel-label">Send a message</div><label>Name<input name="name" required></label><label>Email address<input type="email" name="email" required></label><label>Message<textarea name="message" rows="5" required></textarea></label><button class="page-primary" type="submit">Send message <span>↗</span></button><p class="page-message" id="contactMessage"></p></form><aside class="page-panel"><div class="panel-label">Other ways to reach us</div><p>For order support, include your order number so we can help quickly.</p><div class="support-contact-links"><a class="text-link" id="supportEmailLink" href="mailto:">Loading support contact…</a><a class="text-link support-whatsapp-link" data-support-whatsapp-link href="#" target="_blank" rel="noopener noreferrer" hidden><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> Chat on WhatsApp</a></div></aside></section>`; showAppPage(name, content); if (name === 'contact') { syncSupportEmailLink(); syncSupportWhatsAppLink(); $('#contactForm').addEventListener('submit', (event) => { event.preventDefault(); $('#contactMessage').textContent = 'Thanks. We will be in touch shortly.'; event.target.reset(); }); } }
 async function hydrateTrackingItems() { const card = document.querySelector('.tracking-card'); if (!card || card.querySelector('.tracking-items')) return; const number = card.querySelector('.order-number')?.textContent; if (!number) return; const response = await fetch('http://localhost:4000/api/v1/orders', { headers: apiHeaders() }); if (!response.ok) return; const order = ((await response.json()).data || []).find((item) => item.orderNumber === number); if (!order?.items?.length) return; const lines = order.items.map((item) => { const product = products.find((entry) => normalizeProductId(entry.id) === normalizeProductId(item.productId)) || products.find((entry) => entry.name?.toLowerCase() === item.name?.toLowerCase()); return `<div class="tracking-item"><img src="${escapeHtml(imageFor(product))}" alt="${escapeHtml(item.name)}"><div><strong>${escapeHtml(item.name)}</strong><small>Qty ${item.quantity}</small></div><b>${money(Number(item.unitPrice) * item.quantity)}</b></div>`; }).join(''); card.querySelector('.tracking-progress')?.insertAdjacentHTML('beforebegin', `<div class="tracking-items"><div class="panel-label">Items in this order</div>${lines}</div>`); }
 let trackingMapLoaderPromise;
@@ -311,6 +364,22 @@ async function renderTrackingPage(orderNumber = '', options = {}) {
 document.addEventListener('click', async (event) => { const retry = event.target.closest('[data-retry-payment]'); if (!retry) return; const emailField = document.querySelector(`[data-retry-email-input="${CSS.escape(retry.dataset.retryPayment)}"]`); const email = String(emailField?.value || '').trim(); if (!emailField?.checkValidity() || !email) { emailField?.reportValidity(); return; } retry.disabled = true; try { const response = await fetch(`http://localhost:4000/api/v1/payments/initialize`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ provider: 'paystack', paymentId: retry.dataset.retryPayment, email }) }); const result = await response.json().catch(() => ({})); if (response.status === 401) { setClientToken(''); authToken = ''; await showClientAlert('warning', 'Sign in required', 'Your session has expired. Sign in again before retrying this payment.'); $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); return; } if (!response.ok) throw new Error(result.message || result.error || 'Unable to retry payment'); if (!result.provider?.redirectUrl) throw new Error('Payment provider is unavailable right now'); window.location.assign(result.provider.redirectUrl); } catch (error) { await showClientAlert('error', 'Payment could not be started', error.message || 'Unable to retry payment.'); } finally { retry.disabled = false; } });
 function navigatePage(name, value = '') { $('#accountDropdown').hidden = true; closeAccountModal(); if (name === 'home') { location.hash = 'shop'; showStorePage(); return; } if (name === 'checkout') { renderCheckoutPage(); return; } if (name === 'about' || name === 'contact') { renderInfoPage(name); location.hash = name; return; } if (name === 'profile') { renderProfilePage(); location.hash = 'profile'; return; } if (name === 'kyc') { renderKycPage().then(() => document.querySelector('[data-profile-tab="kyc"]')?.click()); location.hash = 'profile'; return; } if (name === 'orders') { renderOrdersPage(); location.hash = 'orders'; return; } if (name === 'notifications') { renderNotificationsPage(); location.hash = 'notifications'; return; } if (name === 'tracking') { renderTrackingPage(value); location.hash = value ? `tracking/${encodeURIComponent(value)}` : 'tracking'; return; } }
 function routeFromHash() { const route = location.hash.replace(/^#/, ''); const [section, value] = route.split('/'); if (section === 'profile') renderProfilePage(); else if (section === 'kyc') renderKycPage().then(() => document.querySelector('[data-profile-tab="kyc"]')?.click()); else if (section === 'orders') renderOrdersPage(); else if (section === 'notifications') renderNotificationsPage(); else if (section === 'tracking') renderTrackingPage(value || ''); else if (section === 'checkout') renderCheckoutPage(); else if (section === 'about' || section === 'contact') renderInfoPage(section); else showStorePage(); }
+const paymentReturnStatus = new URLSearchParams(location.search).get('paymentStatus');
+if (paymentReturnStatus) {
+  const paymentReturnMessages = {
+    verification_pending: ['warning', 'Payment confirmation is taking longer than expected. Your order is in tracking; check again shortly.'],
+    failed: ['error', 'Paystack did not complete this payment. Open your order history to check its status and retry.'],
+    cancelled: ['info', 'Payment was cancelled. Your order remains available in your order history.'],
+    expired: ['warning', 'The payment session expired. Open your order history to retry payment.'],
+    processing: ['info', 'Your payment is still processing. Check your order tracking for updates.'],
+    reference_missing: ['warning', 'Paystack returned without a payment reference. Check your order history for the latest status.'],
+    not_found: ['error', 'We could not match this payment to an order. Contact support and provide the payment reference from your Paystack receipt.']
+  };
+  const [icon, message] = paymentReturnMessages[paymentReturnStatus] || paymentReturnMessages.verification_pending;
+  void showClientAlert(icon, 'Payment update', message).then(() => {
+    history.replaceState(null, '', `${location.pathname}${location.hash}`);
+  });
+}
 window.addEventListener('hashchange', () => {
   if (location.hash.replace(/^#/, '').split('/')[0] !== 'tracking') window.destroyDeliveryRouteMap?.();
 });
@@ -404,10 +473,89 @@ function renderPublishedCoupons() {
     }).join('');
   });
 }
-function hydrateCheckoutControls(formSelector) { const form = document.querySelector(formSelector); const summary = form?.parentElement?.querySelector('.checkout-summary'); if (!form) return; if (summary && !summary.querySelector('[data-apply-coupon]')) summary.insertAdjacentHTML('beforeend', `<div class="checkout-coupon"><label>Coupon code<input name="couponCode" placeholder="WELCOME10" autocomplete="off"></label><button type="button" class="page-secondary" data-apply-coupon>Apply</button><small data-coupon-message></small></div><div class="published-coupons" hidden><div class="published-coupons-heading"><div><p class="published-coupons-kicker">A little extra</p><p class="published-coupons-title">Available offers</p></div><span class="published-coupons-count" data-offer-count></span></div><div class="published-coupons-list" data-published-coupons></div></div><div class="checkout-summary-lines"><span>Discount <b id="checkoutDiscount">-${money(0)}</b></span><span>Tax <b id="checkoutTax">${money(0)}</b></span></div>`); renderPaymentProviders(); updateCheckout(); bindCheckoutCoupon(form); void loadPublishedCoupons(); }
+function hydrateCheckoutControls(formSelector) {
+  const form = document.querySelector(formSelector);
+  const summary = form?.parentElement?.querySelector('.checkout-summary');
+  if (!form) return;
+  if (form.id === 'pageCheckoutForm' && !form.querySelector('#deliveryOptions')) {
+    form.querySelector('select[name="country"]')?.insertAdjacentHTML('afterend', '<div class="delivery-option courier-delivery-notice" id="deliveryOptions"><span><strong>Courier-arranged delivery</strong><small>The courier team will contact you to arrange delivery and collect the delivery fee separately.</small></span></div>');
+  }
+  const existingCoupon = form.id === 'checkoutForm' ? document.querySelector('#checkoutModal .checkout-coupon') : null;
+  const existingOffers = form.id === 'checkoutForm' ? document.querySelector('#checkoutModal .published-coupons') : null;
+  if (!form.querySelector('.checkout-offers-panel')) {
+    const offers = document.createElement('section');
+    offers.className = 'checkout-offers-panel';
+    offers.innerHTML = `<div class="checkout-address-heading"><div><span class="checkout-section-kicker">A LITTLE EXTRA</span><strong>Offers for your order</strong></div></div><div class="checkout-offers-content"></div>`;
+    form.append(offers);
+    const offerContent = offers.querySelector('.checkout-offers-content');
+    if (existingCoupon && existingOffers) {
+      offerContent.append(existingCoupon, existingOffers);
+    } else {
+      offerContent.insertAdjacentHTML('beforeend', `<div class="checkout-coupon"><label>Coupon code<input name="couponCode" placeholder="WELCOME10" autocomplete="off"></label><button type="button" class="page-secondary" data-apply-coupon>Apply</button><small data-coupon-message></small></div><div class="published-coupons" hidden><div class="published-coupons-heading"><div><p class="published-coupons-kicker">A little extra</p><p class="published-coupons-title">Available offers</p></div><span class="published-coupons-count" data-offer-count></span></div><div class="published-coupons-list" data-published-coupons></div></div>`);
+    }
+  }
+  if (summary && !summary.querySelector('.checkout-summary-lines')) {
+    summary.insertAdjacentHTML('beforeend', `<div class="checkout-summary-lines"><span>Subtotal <b id="checkoutSubtotal">${money(0)}</b></span><span>Discount <b id="checkoutDiscount">-${money(0)}</b></span><span>Tax <b id="checkoutTax">${money(0)}</b></span></div>`);
+  }
+  renderPaymentProviders();
+  if (form.id === 'pageCheckoutForm' && summary && !summary.querySelector('[data-checkout-payment-controls]')) {
+    const controls = document.createElement('div');
+    controls.className = 'checkout-payment-controls';
+    controls.dataset.checkoutPaymentControls = '';
+    summary.append(controls);
+    const heading = form.querySelector('.payment-heading');
+    const providerSelector = document.querySelector(`[data-payment-providers-for="${form.id}"]`);
+    const providerLabel = form.elements.namedItem('provider')?.closest('label');
+    const submitButton = form.querySelector('button[type="submit"]');
+    const message = form.querySelector('#checkoutPageMessage');
+    for (const element of [heading, providerSelector, providerLabel, submitButton, message]) {
+      if (!element) continue;
+      if (element === providerLabel) {
+        const provider = providerLabel.querySelector('[name="provider"]');
+        if (provider) provider.setAttribute('form', form.id);
+      }
+      if (element === submitButton) element.setAttribute('form', form.id);
+      controls.append(element);
+    }
+    submitButton?.classList.add('checkout-place-order');
+  }
+  updateCheckout();
+  bindCheckoutCoupon(form);
+  void loadPublishedCoupons();
+}
 const imageFor = (product) => normalizeImageSource(product?.images || product?.image || product?.images?.[0] || product?.product?.images || product?.product?.image || product?.product || '');
 const apiHeaders = () => authToken ? { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' } : null;
-async function syncCartFromServer() { if (!authToken) return; if (isCartRecentlyCleared()) { cart = []; wishlist = new Set(); clearCartPersistence(); renderCart(); renderWishlist(); return; } try { const response = await fetch('http://localhost:4000/api/v1/cart', { headers: apiHeaders() }); if (!response.ok) return; const payload = await response.json(); if (isCartRecentlyCleared()) { cart = []; wishlist = new Set(); renderCart(); renderWishlist(); return; } const serverItems = payload.data?.items || []; cart = serverItems.map((item) => ({ ...item.product, price: Number(item.product.price), image: item.product.images?.[0]?.url || '', quantity: item.quantity, serverCartItemId: item.id })); saveState(); renderCart(); } catch { /* Keep the signed-in user's local cart when the API is unavailable. */ } }
+async function syncCartFromServer() {
+  if (!authToken) return;
+  if (isCartRecentlyCleared()) { cart = []; wishlist = new Set(); clearCartPersistence(); renderCart(); renderWishlist(); return; }
+  const preserveLocalCart = preserveLocalCartOnAuth;
+  const checkoutItems = preserveLocalCart ? cart.map((item) => ({ ...item })) : [];
+  try {
+    const response = await fetch('http://localhost:4000/api/v1/cart', { headers: apiHeaders() });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (isCartRecentlyCleared()) { cart = []; wishlist = new Set(); clearCartPersistence(); renderCart(); renderWishlist(); return; }
+    const serverItems = payload.data?.items || [];
+    cart = serverItems.map((item) => ({ ...item.product, price: Number(item.product.price), image: item.product.images?.[0]?.url || '', quantity: item.quantity, serverCartItemId: item.id }));
+    if (preserveLocalCart) {
+      checkoutItems.forEach((checkoutItem) => {
+        const productId = normalizeProductId(checkoutItem.id);
+        const existingItem = cart.find((item) => normalizeProductId(item.id) === productId);
+        if (existingItem) existingItem.quantity += Number(checkoutItem.quantity || 0);
+        else cart.push(checkoutItem);
+      });
+    }
+    saveState();
+    renderCart();
+    if (preserveLocalCart && checkoutItems.length) {
+      await Promise.all(checkoutItems.map((checkoutItem) => {
+        const productId = normalizeProductId(checkoutItem.id);
+        const mergedItem = cart.find((item) => normalizeProductId(item.id) === productId);
+        return mergedItem ? syncCartItem(productId, mergedItem.quantity) : Promise.resolve();
+      }));
+    }
+  } catch { /* Keep the signed-in user's local cart when the API is unavailable. */ }
+}
 async function clearServerCart() { if (!authToken) return; try { await fetch('http://localhost:4000/api/v1/cart', { method: 'DELETE', headers: apiHeaders() }); } catch { /* The local cart is still cleared when the API is unavailable. */ } }
 async function syncCartItem(productId, quantity) { if (!authToken) return; const current = cart.find((item) => item.id === productId); try { if (current?.serverCartItemId) { await fetch(`http://localhost:4000/api/v1/cart/items/${current.serverCartItemId}`, { method: 'PATCH', headers: apiHeaders(), body: JSON.stringify({ quantity }) }); } else { const response = await fetch('http://localhost:4000/api/v1/cart/items', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ productId, quantity }) }); if (response.ok) { const payload = await response.json(); const synced = payload.data; if (current && synced?.id) current.serverCartItemId = synced.id; } } } catch { /* Local cart remains usable if the API is offline. */ } }
 let featuredProducts = [];
@@ -470,7 +618,31 @@ const sessionAwareFetch = window.fetch.bind(window);
 window.fetch = async (resource, options) => { const response = await sessionAwareFetch(resource, options); const url = String(resource); if (response.status === 401 && !url.includes('/api/v1/auth/')) logoutToLanding(); return response; };
 function setAccountMode(mode) { accountMode = mode; const register = mode === 'register'; $('#accountTitle').textContent = register ? 'Create your account.' : 'Welcome back.'; $('#accountSubtitle').textContent = register ? 'A few details to get started.' : 'Sign in to continue.'; $('.account-name-fields').hidden = !register; $('#accountSubmit').innerHTML = `${register ? 'Create account' : 'Sign in'} <span>↗</span>`; $('#accountSwitch').innerHTML = register ? 'Sign in <span aria-hidden="true">↪</span>' : 'Create account <span aria-hidden="true">＋</span>'; $('#accountForm input[name="password"]').autocomplete = register ? 'new-password' : 'current-password'; document.querySelectorAll('.auth-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.authTab === mode)); }
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
-function prefillCheckout(user, addresses) { const form = $('#checkoutForm'); const name = addresses[0]?.fullName || `${user.data.firstName} ${user.data.lastName}`.trim(); const nameParts = name.split(/\s+/); form.elements.firstName.value = user.data.firstName || nameParts[0] || ''; form.elements.lastName.value = user.data.lastName || nameParts.slice(1).join(' '); form.elements.email.value = user.data.email || ''; form.elements.phone.value = addresses[0]?.phone || user.data.phone || ''; const address = addresses[0]; if (!address) return; form.elements.address.value = address.addressLine1 || ''; form.elements.city.value = address.city || ''; form.elements.gpsAddress.value = address.instructions || ''; form.elements.country.value = normalizeCountryCode(address.country) || form.elements.country.value; }
+function prefillCheckout(user, addresses) {
+  const form = $('#checkoutForm');
+  if (!form) return;
+  const currentAddress = checkoutAddresses.get(form)?.find((address) => address.id === form.dataset.checkoutAddressId);
+  const defaultAddress = currentAddress || addresses.find((address) => address.isDefault) || addresses[0];
+  const name = defaultAddress?.fullName || `${user.data.firstName} ${user.data.lastName}`.trim();
+  const nameParts = name.split(/\s+/);
+  form.elements.firstName.value = user.data.firstName || nameParts[0] || '';
+  form.elements.lastName.value = user.data.lastName || nameParts.slice(1).join(' ');
+  form.elements.email.value = user.data.email || '';
+  form.elements.phone.value = defaultAddress?.phone || user.data.phone || '';
+  if (!defaultAddress) return;
+  const ui = checkoutAddressUi.get(form);
+  if (ui) {
+    checkoutAddresses.set(form, addresses);
+    applySavedAddress(form, defaultAddress);
+    ui.renderAddresses(defaultAddress.id);
+    ui.fields.hidden = true;
+  } else {
+    form.elements.address.value = defaultAddress.addressLine1 || '';
+    form.elements.city.value = defaultAddress.city || '';
+    form.elements.gpsAddress.value = defaultAddress.instructions || '';
+    form.elements.country.value = normalizeCountryCode(defaultAddress.country) || form.elements.country.value;
+  }
+}
 let storeBrand = { name: 'Store', logo: '' };
 let configuredSupportEmail = '';
 let configuredSupportWhatsApp = '';
@@ -648,9 +820,25 @@ function renderProductReviews() {
 }
 function openProduct(id) { selectedProduct = products.find((product) => normalizeProductId(product.id) === normalizeProductId(id)); if (!selectedProduct) return; void recordProductView(selectedProduct.id); modalQuantity = 1; selectedImageIndex = 0; zoomedProductImage = false; renderModalGallery(); $('#modalCategory').textContent = selectedProduct.category; $('#modalName').textContent = selectedProduct.name; $('#modalRating').textContent = `★ ${Number(getProductReviewSummary(selectedProduct.id).average || selectedProduct.rating || 5).toFixed(1)} / 5`; const viewCount = $('#modalViewCount') || (() => { const element = document.createElement('p'); element.id = 'modalViewCount'; element.className = 'product-view-count'; $('#modalRating').after(element); return element; })(); viewCount.textContent = `${Number(selectedProduct.viewCount || 0).toLocaleString()} views`; $('#modalPrice').textContent = money(selectedProduct.price); $('.modal-description').textContent = selectedProduct.description || 'A quietly considered piece made for daily use. Thoughtful materials, enduring form, and the details that make a good object feel like yours.'; $('#modalUsage').textContent = selectedProduct.usage || 'Use this piece as part of your everyday routine.'; $('#modalUsageSection').hidden = !selectedProduct.usage; const features = String(selectedProduct.features || '').split(/\r?\n|\s*[,;]\s*/).map((feature) => feature.trim()).filter(Boolean); $('#modalFeatures').innerHTML = features.map((feature) => `<li>${escapeHtml(feature)}</li>`).join(''); $('#modalFeaturesSection').hidden = !features.length; $('#modalQuantity').textContent = modalQuantity; $('#modalWishlist').textContent = wishlist.has(normalizeProductId(selectedProduct.id)) ? '♥ In your wishlist' : '♡ Add to wishlist'; renderProductReviews(); $('#productModal').classList.add('open'); $('#productModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); }
 function closeProduct() { $('#productModal').classList.remove('open'); $('#productModal').setAttribute('aria-hidden', 'true'); $('#overlay').classList.remove('visible'); }
-function openCheckout() { checkoutStep = 1; selectedShippingMethod = null; appliedCoupon = null; checkoutTax = 0; const countryField = $('#shippingCountry'); if (countryField) countryField.value = ''; $('#checkoutModal').classList.add('open'); $('#checkoutModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); updateCheckout(); void enhanceCheckoutAddressSelector('#checkoutForm'); hydrateCheckoutControls('#checkoutForm'); }
+function openCheckout() { checkoutStep = 1; appliedCoupon = null; checkoutTax = 0; const countryField = $('#shippingCountry'); if (countryField) countryField.value = ''; $('#checkoutModal').classList.add('open'); $('#checkoutModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); updateCheckout(); void enhanceCheckoutAddressSelector('#checkoutForm'); hydrateCheckoutControls('#checkoutForm'); }
 function closeCheckout() { $('#checkoutModal').classList.remove('open'); $('#checkoutModal').setAttribute('aria-hidden', 'true'); $('#overlay').classList.remove('visible'); }
-function updateCheckout() { document.querySelectorAll('.checkout-step').forEach((section) => { section.classList.toggle('active', Number(section.dataset.step) === checkoutStep); }); document.querySelectorAll('[data-step-label]').forEach((label) => { label.classList.toggle('active', Number(label.dataset.stepLabel) <= checkoutStep); }); const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0); const discount = Number(appliedCoupon?.discount || 0); const shipping = Number(appliedCoupon?.shipping ?? (selectedShippingMethod?.price || 0)); const serviceFee = Number(((Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0)) * 0.002).toFixed(2)); const total = Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0) + serviceFee; document.querySelectorAll('#checkoutTotal, .checkout-summary-total strong').forEach((element) => { element.textContent = money(total); }); document.querySelectorAll('#checkoutDiscount').forEach((element) => { element.textContent = `-${money(discount)}`; }); document.querySelectorAll('#checkoutTax').forEach((element) => { element.textContent = money(checkoutTax); }); document.querySelectorAll('#checkoutServiceFee').forEach((element) => { element.textContent = money(serviceFee); }); if (checkoutOrderNumber) $('#orderNumber').textContent = checkoutOrderNumber; }
+const checkoutShippingAmount = () => 0;
+function updateCheckout() {
+  document.querySelectorAll('.checkout-step').forEach((section) => { section.classList.toggle('active', Number(section.dataset.step) === checkoutStep); });
+  document.querySelectorAll('[data-step-label]').forEach((label) => { label.classList.toggle('active', Number(label.dataset.stepLabel) <= checkoutStep); });
+  const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
+  const discount = Number(appliedCoupon?.discount || 0);
+  const shipping = checkoutShippingAmount(subtotal);
+  const serviceFee = Number(((Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0)) * 0.002).toFixed(2));
+  const total = Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0) + serviceFee;
+  document.querySelectorAll('#checkoutTotal, .checkout-summary-total strong').forEach((element) => { element.textContent = money(total); });
+  document.querySelectorAll('#checkoutSubtotal').forEach((element) => { element.textContent = money(subtotal); });
+  document.querySelectorAll('[data-courier-delivery] b').forEach((element) => { element.textContent = 'Quoted separately'; });
+  document.querySelectorAll('#checkoutDiscount').forEach((element) => { element.textContent = `-${money(discount)}`; });
+  document.querySelectorAll('#checkoutTax').forEach((element) => { element.textContent = money(checkoutTax); });
+  document.querySelectorAll('#checkoutServiceFee').forEach((element) => { element.textContent = money(serviceFee); });
+  if (checkoutOrderNumber) $('#orderNumber').textContent = checkoutOrderNumber;
+}
 const baseUpdateCheckout = updateCheckout;
 function renderPaymentProviders() {
   const configuredPaystack = availablePaymentGateways.find((gateway) => gateway.id === 'paystack');
@@ -658,15 +846,16 @@ function renderPaymentProviders() {
   configuredPaymentProvider = 'paystack';
   selectedPaymentProvider = 'paystack';
   document.querySelectorAll('#checkoutForm, #pageCheckoutForm').forEach((form) => {
-    const select = form.querySelector('[name="provider"]');
+    const select = form.elements.namedItem('provider');
     if (!select) return;
-    let selector = form.querySelector('[data-payment-providers]');
+    let selector = document.querySelector(`[data-payment-providers-for="${form.id}"]`) || form.querySelector('[data-payment-providers]');
     if (!selector) {
       const host = select.closest('.payment-option, label');
       host?.insertAdjacentHTML('beforebegin', '<div class="payment-provider-selector" data-payment-providers></div>');
-      selector = form.querySelector('[data-payment-providers]');
+      selector = document.querySelector(`[data-payment-providers-for="${form.id}"]`) || form.querySelector('[data-payment-providers]');
     }
     if (!selector) return;
+    selector.dataset.paymentProvidersFor = form.id;
     select.innerHTML = gateways.map((gateway) => `<option value="${escapeHtml(gateway.id)}">${escapeHtml(gateway.name)}</option>`).join('');
     select.value = selectedPaymentProvider;
     select.hidden = true;
@@ -687,7 +876,7 @@ updateCheckout = () => {
   const serviceFeeRate = Number.isFinite(configuredRate) ? Math.max(0, configuredRate) : 0;
   const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
   const discount = Number(appliedCoupon?.discount || 0);
-  const shipping = Number(appliedCoupon?.shipping ?? (selectedShippingMethod?.price || 0));
+  const shipping = checkoutShippingAmount(subtotal);
   const serviceFee = Number(((Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0)) * serviceFeeRate / 100).toFixed(2));
   const total = Math.max(0, subtotal - discount) + shipping + Number(checkoutTax || 0) + serviceFee;
   document.querySelectorAll('#checkoutTotal, .checkout-summary-total strong').forEach((element) => { element.textContent = money(total); });
@@ -701,7 +890,10 @@ document.addEventListener('click', (event) => {
   const badge = event.target.closest('[data-payment-provider]');
   if (!badge) return;
   selectedPaymentProvider = badge.dataset.paymentProvider;
-  document.querySelectorAll('#checkoutForm [name="provider"], #pageCheckoutForm [name="provider"]').forEach((select) => { select.value = selectedPaymentProvider; });
+  document.querySelectorAll('#checkoutForm, #pageCheckoutForm').forEach((form) => {
+    const select = form.elements.namedItem('provider');
+    if (select) select.value = selectedPaymentProvider;
+  });
   renderPaymentProviders();
   updateCheckout();
 });
@@ -757,7 +949,8 @@ function applyCheckoutFieldValidation(form) {
 function validateCheckoutForm(form) {
   if (!form) return false;
   applyCheckoutFieldValidation(form);
-  const fields = [...form.querySelectorAll('input, select')];
+  const activeSection = form.id === 'checkoutForm' ? form.querySelector('.checkout-step.active') : form;
+  const fields = [...(activeSection || form).querySelectorAll('input, select')];
   const invalid = fields.find((field) => {
     if (field.disabled || field.type === 'hidden') return false;
     return !field.checkValidity();
@@ -769,9 +962,33 @@ function validateCheckoutForm(form) {
   }
   return true;
 }
-async function loadShippingQuote(form = null) { const activeForm = form || ($('#checkoutModal')?.classList.contains('open') ? $('#checkoutForm') : document.querySelector('#pageCheckoutForm') || $('#checkoutForm')); const countryField = activeForm?.querySelector('select[name="country"]') || $('#shippingCountry'); const country = String(countryField?.value || '').trim().toUpperCase(); if (country.length < 2) { countryField?.setCustomValidity('Choose a country before continuing.'); countryField?.reportValidity(); throw new Error('Choose a country before continuing.'); } countryField?.setCustomValidity(''); const response = await fetch('http://localhost:4000/api/v1/shipping/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ country, weightKg: cart.reduce((sum, item) => sum + item.quantity, 0) }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.message || result.error || 'No delivery methods are available for this destination.'); const methods = result.data || []; selectedShippingMethod = methods[0] || null; const deliveryOptions = activeForm?.querySelector('#deliveryOptions') || $('#deliveryOptions'); if (deliveryOptions) deliveryOptions.innerHTML = methods.length ? methods.map((method, index) => `<label class="delivery-choice ${index === 0 ? 'selected' : ''}"><input type="radio" name="shippingMethod" value="${method.id}" data-price="${method.price}" ${index === 0 ? 'checked' : ''}><span><strong>${method.name}</strong><small>${method.description || `${method.estimatedDays.min}-${method.estimatedDays.max} business days`}</small></span><b>${money(method.price)}</b></label>`).join('') : '<span><strong>No delivery methods available</strong><small>Try another destination.</small></span>'; await loadTaxQuote(activeForm); updateCheckout(); }
-async function loadTaxQuote(form) { const country = String(form?.querySelector('select[name="country"]')?.value || '').trim().toUpperCase(); const enabled = taxEnabled === true || taxEnabled === 'true'; if (!enabled || country.length < 2) { checkoutTax = 0; updateCheckout(); return; } const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0); const response = await fetch('http://localhost:4000/api/v1/taxes/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ country, subtotal: Math.max(0, subtotal - Number(appliedCoupon?.discount || 0)) }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to calculate tax.'); checkoutTax = Number(result.data?.amount || 0); updateCheckout(); }
-async function applyCheckoutCoupon(form, container = null) { const couponContainer = container || form?.querySelector('.checkout-coupon'); const input = couponContainer?.querySelector('input[name="couponCode"]'); const message = couponContainer?.querySelector('[data-coupon-message]'); const code = String(input?.value || '').trim().toUpperCase(); if (!code) { appliedCoupon = null; if (message) { message.classList.add('error'); message.textContent = 'Enter a coupon code.'; } updateCheckout(); return; } const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0); const response = await fetch('http://localhost:4000/api/v1/coupons/validate', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ code, subtotal, shipping: Number(selectedShippingMethod?.price || 0) }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Coupon is invalid or expired.'); appliedCoupon = result.data; if (message) { message.classList.remove('error'); message.textContent = `${appliedCoupon.code} applied.`; } await loadTaxQuote(form); updateCheckout(); }
+async function loadShippingQuote(form = null) {
+  ++shippingQuoteRequestId;
+  const activeForm = form || ($('#checkoutModal')?.classList.contains('open') ? $('#checkoutForm') : document.querySelector('#pageCheckoutForm') || $('#checkoutForm'));
+  const deliveryOptions = activeForm?.querySelector('#deliveryOptions') || $('#deliveryOptions');
+  if (deliveryOptions) deliveryOptions.innerHTML = '<span><strong>Courier-arranged delivery</strong><small>The courier team will contact you to arrange delivery and collect the delivery fee separately.</small></span><b>Quoted separately</b>';
+  updateCheckout();
+  const country = String(activeForm?.querySelector('select[name="country"]')?.value || '').trim().toUpperCase();
+  if (country.length >= 2) await loadTaxQuote(activeForm);
+}
+async function loadTaxQuote(form) {
+  const requestId = ++taxQuoteRequestId;
+  const country = String(form?.querySelector('select[name="country"]')?.value || '').trim().toUpperCase();
+  const enabled = taxEnabled === true || taxEnabled === 'true';
+  if (!enabled || country.length < 2) {
+    checkoutTax = 0;
+    updateCheckout();
+    return;
+  }
+  const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
+  const response = await fetch('http://localhost:4000/api/v1/taxes/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ country, subtotal: Math.max(0, subtotal - Number(appliedCoupon?.discount || 0)) }) });
+  const result = await response.json().catch(() => ({}));
+  if (requestId !== taxQuoteRequestId) return;
+  if (!response.ok) throw new Error(result.error || 'Unable to calculate tax.');
+  checkoutTax = Number(result.data?.amount || 0);
+  updateCheckout();
+}
+async function applyCheckoutCoupon(form, container = null) { const couponContainer = container || form?.querySelector('.checkout-coupon'); const input = couponContainer?.querySelector('input[name="couponCode"]'); const message = couponContainer?.querySelector('[data-coupon-message]'); const code = String(input?.value || '').trim().toUpperCase(); if (!code) { appliedCoupon = null; if (message) { message.classList.add('error'); message.textContent = 'Enter a coupon code.'; } updateCheckout(); return; } const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0); const response = await fetch('http://localhost:4000/api/v1/coupons/validate', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ code, subtotal, shipping: 0 }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Coupon is invalid or expired.'); appliedCoupon = result.data; if (message) { message.classList.remove('error'); message.textContent = `${appliedCoupon.code} applied.`; } await loadTaxQuote(form); updateCheckout(); }
 document.addEventListener('click', (event) => { const button = event.target.closest('[data-apply-coupon]'); if (!button) return; const checkout = button.closest('.checkout-modal, .checkout-page-layout'); const form = checkout?.querySelector('form') || document.querySelector('#pageCheckoutForm'); const message = button.closest('.checkout-coupon')?.querySelector('[data-coupon-message]'); if (!form) return; event.preventDefault(); void applyCheckoutCoupon(form, button.closest('.checkout-coupon')).catch((error) => { if (message) { message.classList.add('error'); message.textContent = error.message; } showToast(error.message); }); });
 document.addEventListener('click', (event) => {
   const chip = event.target.closest('[data-apply-published-coupon]');
@@ -784,8 +1001,92 @@ document.addEventListener('click', (event) => {
   if (couponInput) couponInput.value = code;
   if (form) void applyCheckoutCoupon(form, container).catch((error) => { const message = container?.querySelector('[data-coupon-message]'); if (message) { message.classList.add('error'); message.textContent = error.message; } showToast(error.message); });
 });
-document.addEventListener('change', (event) => { const country = event.target.closest('#pageCheckoutForm select[name="country"]'); if (!country) return; void loadTaxQuote(country.form).catch((error) => showToast(error.message)); });
+document.addEventListener('click', async (event) => {
+  const addressCard = event.target.closest('[data-checkout-address-id]');
+  if (addressCard) {
+    const form = addressCard.closest('form');
+    const address = checkoutAddresses.get(form)?.find((item) => item.id === addressCard.dataset.checkoutAddressId);
+    if (!form || !address) return;
+    const ui = checkoutAddressUi.get(form);
+    if (ui) ui.fields.hidden = true;
+    applySavedAddress(form, address);
+    ui?.renderAddresses(address.id);
+    return;
+  }
+  const addAddress = event.target.closest('[data-checkout-add-address]');
+  if (addAddress) {
+    const picker = addAddress.closest('.checkout-address-picker');
+    const form = picker?.closest('form');
+    const ui = form && checkoutAddressUi.get(form);
+    if (!form || !ui) return;
+    form.dataset.checkoutAddressId = '';
+    ui.renderAddresses('');
+    ui.fields.hidden = false;
+    for (const name of ['address', 'city', 'gpsAddress', 'postal', 'country']) {
+      const field = form.elements.namedItem(name);
+      if (field) field.value = '';
+    }
+    ui.fields.querySelector('[data-checkout-address-message]').textContent = '';
+    ui.fields.querySelector('input[name="address"]')?.focus();
+    return;
+  }
+  const saveAddress = event.target.closest('[data-checkout-save-address]');
+  if (!saveAddress) return;
+  const form = saveAddress.closest('form');
+  const ui = form && checkoutAddressUi.get(form);
+  const message = ui?.fields.querySelector('[data-checkout-address-message]');
+  if (!form || !ui || !message) return;
+  const invalidField = [...ui.fields.querySelectorAll('input[required], select[required]')].find((field) => !field.disabled && !field.checkValidity());
+  if (invalidField) {
+    invalidField.reportValidity();
+    return;
+  }
+  const data = new FormData(form);
+  const recipientName = `${data.get('firstName') || ''} ${data.get('lastName') || ''}`.trim();
+  if (!recipientName || !String(data.get('phone') || '').trim()) {
+    message.textContent = 'Enter a contact name and phone number before saving this address.';
+    (form.elements.namedItem(!data.get('firstName') ? 'firstName' : 'phone'))?.focus();
+    return;
+  }
+  saveAddress.disabled = true;
+  message.textContent = 'Saving address…';
+  try {
+    const response = await fetch('http://localhost:4000/api/v1/addresses', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        fullName: recipientName,
+        phone: data.get('phone'),
+        country: data.get('country'),
+        city: data.get('city'),
+        addressLine1: data.get('address'),
+        instructions: data.get('gpsAddress'),
+        isDefault: (checkoutAddresses.get(form) || []).length === 0
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || payload.error || 'Unable to save this address.');
+    const addresses = checkoutAddresses.get(form) || [];
+    addresses.unshift(payload.data);
+    checkoutAddresses.set(form, addresses);
+    applySavedAddress(form, payload.data);
+    ui.renderAddresses(payload.data.id);
+    ui.fields.hidden = true;
+    const count = form.querySelector('.checkout-address-count');
+    if (count) count.textContent = `${addresses.length} saved`;
+    showToast('Address saved and selected for checkout.');
+  } catch (error) {
+    message.textContent = error.message || 'Unable to save this address.';
+  } finally {
+    saveAddress.disabled = false;
+  }
+});
+document.addEventListener('change', (event) => {
+  const country = event.target.closest('#pageCheckoutForm select[name="country"]');
+  if (country) { void loadShippingQuote(country.form).catch((error) => showToast(error.message)); return; }
+});
 async function ensureCheckoutAddress(form) {
+  if (form instanceof HTMLFormElement && form.dataset.checkoutAddressId) return form.dataset.checkoutAddressId;
   const checkoutForm = form instanceof FormData ? form : new FormData(form);
   const existingResponse = await fetch('http://localhost:4000/api/v1/addresses', { headers: apiHeaders() });
   if (!existingResponse.ok) throw new Error('Unable to load your saved addresses');
@@ -815,12 +1116,12 @@ async function createServerOrder(formOverride = null) {
   const checkoutForm = formOverride || $('#checkoutForm') || $('#pageCheckoutForm');
   if (!checkoutForm) throw new Error('Checkout form is unavailable.');
   const formData = new FormData(checkoutForm);
-  const addressId = await ensureCheckoutAddress(formData);
+  const addressId = await ensureCheckoutAddress(checkoutForm);
   const items = cart.map((item) => ({ productId: toServerProductId(item), quantity: Number(item.quantity) }));
   const response = await fetch('http://localhost:4000/api/v1/orders', {
     method: 'POST',
     headers: apiHeaders(),
-    body: JSON.stringify({ items, addressId, shippingMethodId: selectedShippingMethod?.id, email: formData.get('email'), provider: 'paystack', currency: currencyCode, couponCode: appliedCoupon?.code })
+    body: JSON.stringify({ items, addressId, email: formData.get('email'), provider: 'paystack', currency: currencyCode, couponCode: appliedCoupon?.code, notes: 'Courier team to arrange delivery and collect the delivery fee separately.' })
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.message || result.error || 'Unable to create order');
@@ -906,8 +1207,24 @@ bindCategoryTabs();
 $('#sortSelect').addEventListener('change', renderProducts); $('#cartToggle').addEventListener('click', openCart); $('#cartClose').addEventListener('click', closeCart); $('#wishlistToggle').addEventListener('click', openWishlist); $('#wishlistClose').addEventListener('click', closeWishlist); $('#overlay').addEventListener('click', () => { closeCart(); closeWishlist(); closeProduct(); closeCheckout(); }); $('#checkoutButton').addEventListener('click', () => { if (cart.length) { closeCart(); navigatePage('checkout'); } else showToast('Your bag is empty'); });
 $('#featuredPrevious')?.addEventListener('click', () => { if (!featuredProducts.length) return; featuredOffset = (featuredOffset - 1 + featuredProducts.length) % featuredProducts.length; renderFeaturedProducts(); });
 $('#featuredNext')?.addEventListener('click', () => { if (!featuredProducts.length) return; featuredOffset = (featuredOffset + 1) % featuredProducts.length; renderFeaturedProducts(); });
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-continue-shopping]');
+  if (!button) return;
+  event.preventDefault();
+  if (button.closest('#checkoutModal')) closeCheckout();
+  else navigatePage('home');
+  document.querySelector('#catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 $('#modalClose').addEventListener('click', closeProduct); $('#modalZoom').addEventListener('click', () => { zoomedProductImage = !zoomedProductImage; renderModalGallery(); }); $('#modalImage').addEventListener('click', () => { zoomedProductImage = !zoomedProductImage; renderModalGallery(); }); $('#modalMinus').addEventListener('click', () => { modalQuantity = Math.max(1, modalQuantity - 1); $('#modalQuantity').textContent = modalQuantity; }); $('#modalPlus').addEventListener('click', () => { modalQuantity += 1; $('#modalQuantity').textContent = modalQuantity; }); $('#modalAdd').addEventListener('click', () => { for (let index = 0; index < modalQuantity; index += 1) addToCart(selectedProduct.id); closeProduct(); openCart(); }); $('#modalWishlist').addEventListener('click', () => { const selectedId = normalizeProductId(selectedProduct.id); void recordProductView(selectedId); if (wishlist.has(selectedId)) wishlist.delete(selectedId); else wishlist.add(selectedId); saveState(); $('#modalWishlist').textContent = wishlist.has(selectedId) ? '♥ In your wishlist' : '♡ Add to wishlist'; renderProducts(); renderWishlist(); });
-$('#checkoutClose').addEventListener('click', closeCheckout); $('#shippingCountry').addEventListener('change', () => { const form = $('#checkoutForm'); applyCheckoutFieldValidation(form); loadShippingQuote().catch((error) => showToast(error.message)); }); $('#paymentProvider').addEventListener('change', () => { $('#paymentHelp').textContent = 'Secure card, bank, and mobile money checkout via Paystack.'; }); $('#checkoutForm').addEventListener('input', () => applyCheckoutFieldValidation($('#checkoutForm'))); $('#checkoutForm').addEventListener('change', (event) => { const method = event.target.closest('input[name="shippingMethod"]'); if (!method) return; selectedShippingMethod = { id: method.value, price: Number(method.dataset.price) }; document.querySelectorAll('.delivery-choice').forEach((choice) => choice.classList.toggle('selected', choice.contains(method))); updateCheckout(); }); const submitCheckoutForm = async (event, form, isPageCheckout = false) => {
+$('#checkoutClose').addEventListener('click', closeCheckout);
+$('#shippingCountry').addEventListener('change', () => {
+  const form = $('#checkoutForm');
+  applyCheckoutFieldValidation(form);
+  void loadShippingQuote().catch((error) => showToast(error.message));
+});
+$('#paymentProvider').addEventListener('change', () => { $('#paymentHelp').textContent = 'Secure card, bank, and mobile money checkout via Paystack.'; });
+$('#checkoutForm').addEventListener('input', () => applyCheckoutFieldValidation($('#checkoutForm')));
+const submitCheckoutForm = async (event, form, isPageCheckout = false) => {
   if (!form) return;
   event.preventDefault();
   if (!validateCheckoutForm(form)) return;
@@ -918,24 +1235,29 @@ $('#checkoutClose').addEventListener('click', closeCheckout); $('#shippingCountr
     invalidField.reportValidity();
     return;
   }
-  if (!isPageCheckout && (checkoutStep === 1 || checkoutStep === 2)) {
-    try {
+  const isFinalStep = isPageCheckout || checkoutStep === 3;
+  if (isFinalStep && form.dataset.submitting === 'true') return;
+  const submitButton = isFinalStep
+    ? currentSection.querySelector('button[type="submit"]') || document.querySelector(`.checkout-summary button[form="${form.id}"][type="submit"]`)
+    : null;
+  const originalButtonContent = submitButton?.innerHTML;
+  let keepSubmitting = false;
+  if (isFinalStep) {
+    form.dataset.submitting = 'true';
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
+      submitButton.textContent = 'Processing...';
+    }
+  }
+  try {
+    if (!isPageCheckout && checkoutStep === 2) {
       await loadShippingQuote(form);
-    } catch (error) {
-      showToast(error.message);
-      return;
     }
-  }
-  if (isPageCheckout) {
-    try {
+    if (isPageCheckout) {
       await loadTaxQuote(form);
-    } catch (error) {
-      showToast(error.message);
-      return;
     }
-  }
-  if (isPageCheckout || checkoutStep === 3) {
-    try {
+    if (isFinalStep) {
       if (!authToken) {
         showToast('Sign in to place an order.');
         return;
@@ -946,18 +1268,31 @@ $('#checkoutClose').addEventListener('click', closeCheckout); $('#shippingCountr
       }
       checkoutOrderNumber = await createServerOrder(form);
       const redirectUrl = await initializePayment(form);
-      if (redirectUrl) { window.location.assign(redirectUrl); return; }
+      if (redirectUrl) {
+        window.location.assign(redirectUrl);
+        keepSubmitting = true;
+        return;
+      }
       showToast('Payment could not be started. Your order is ready to retry from tracking.');
       navigatePage('tracking', checkoutOrderNumber);
-      return;
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Unable to place order.');
+      keepSubmitting = true;
       return;
     }
-  }
-  if (!isPageCheckout) {
-    checkoutStep += 1;
-    updateCheckout();
+    if (!isPageCheckout) {
+      checkoutStep += 1;
+      updateCheckout();
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Unable to place order.');
+  } finally {
+    if (isFinalStep && !keepSubmitting) {
+      delete form.dataset.submitting;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute('aria-busy');
+        submitButton.innerHTML = originalButtonContent;
+      }
+    }
   }
 };
 $('#checkoutForm').addEventListener('submit', (event) => submitCheckoutForm(event, $('#checkoutForm'), false));
@@ -970,18 +1305,18 @@ function clearCatalogFilters() { query = ''; activeCategory = 'All'; activeCateg
 $('#clearCatalogFilters').addEventListener('click', clearCatalogFilters);
 $('#searchToggle').addEventListener('click', () => { $('#searchBar').classList.add('open'); $('#searchInput').focus(); }); $('#searchClose').addEventListener('click', () => { $('#searchBar').classList.remove('open'); }); $('#searchInput').addEventListener('input', (event) => { updateProductSearch(event.target.value); }); $('#catalogSearchInput').addEventListener('input', (event) => { updateProductSearch(event.target.value); }); $('#searchBar').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('#catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); $('#searchBar').classList.remove('open'); }); $('#catalogSearch').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('#catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 $('#newsletterForm')?.addEventListener('submit', (event) => { event.preventDefault(); $('#formMessage').textContent = 'You are on the list. See you soon.'; event.target.reset(); });
-$('#accountToggle').addEventListener('click', () => { $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); loadAccount(); }); $('#accountClose').addEventListener('click', () => { $('#accountModal').classList.remove('open'); $('#accountModal').setAttribute('aria-hidden', 'true'); $('#overlay').classList.remove('visible'); }); $('#accountSwitch').addEventListener('click', () => setAccountMode(accountMode === 'login' ? 'register' : 'login')); document.querySelectorAll('.auth-tab').forEach((tab) => tab.addEventListener('click', () => setAccountMode(tab.dataset.authTab))); $('#accountPasswordToggle').addEventListener('click', () => { const input = $('#accountPasswordInput'); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; $('#accountPasswordToggle').textContent = visible ? 'Show' : 'Hide'; $('#accountPasswordToggle').setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); }); $('#accountLogout').addEventListener('click', () => { setClientToken(''); authToken = ''; void loadPublishedCoupons(); $('#accountToggle').textContent = 'Account'; $('#accountForm').hidden = false; $('#accountSwitch').hidden = false; $('#accountSession').hidden = true; setAccountMode('login'); showToast('You have been signed out'); }); $('#accountForm').addEventListener('submit', async (event) => { event.preventDefault(); const data = new FormData(event.target); const payload = { email: data.get('email'), password: data.get('password') }; if (accountMode === 'register') Object.assign(payload, { firstName: data.get('firstName'), lastName: data.get('lastName') }); try { const response = await fetch(`http://localhost:4000/api/v1/auth/${accountMode === 'register' ? 'register' : 'login'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to authenticate'); if (accountMode === 'register') {
+$('#accountToggle').addEventListener('click', () => { if (!authToken) preserveLocalCartOnAuth = cart.length > 0; $('#accountModal').classList.add('open'); $('#accountModal').setAttribute('aria-hidden', 'false'); $('#overlay').classList.add('visible'); loadAccount(); }); $('#accountClose').addEventListener('click', () => closeAccountModal()); $('#accountSwitch').addEventListener('click', () => setAccountMode(accountMode === 'login' ? 'register' : 'login')); document.querySelectorAll('.auth-tab').forEach((tab) => tab.addEventListener('click', () => setAccountMode(tab.dataset.authTab))); $('#accountPasswordToggle').addEventListener('click', () => { const input = $('#accountPasswordInput'); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; $('#accountPasswordToggle').textContent = visible ? 'Show' : 'Hide'; $('#accountPasswordToggle').setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); }); $('#accountLogout').addEventListener('click', () => { setClientToken(''); authToken = ''; void loadPublishedCoupons(); $('#accountToggle').textContent = 'Account'; $('#accountForm').hidden = false; $('#accountSwitch').hidden = false; $('#accountSession').hidden = true; setAccountMode('login'); showToast('You have been signed out'); }); $('#accountForm').addEventListener('submit', async (event) => { event.preventDefault(); const data = new FormData(event.target); const payload = { email: data.get('email'), password: data.get('password') }; if (accountMode === 'register') Object.assign(payload, { firstName: data.get('firstName'), lastName: data.get('lastName') }); try { const response = await fetch(`http://localhost:4000/api/v1/auth/${accountMode === 'register' ? 'register' : 'login'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to authenticate'); if (accountMode === 'register') {
   $('#accountError').textContent = '';
   event.target.reset();
   setAccountMode('login');
   await showToast('Account created. Check your email to verify it before signing in.', 'success');
   return;
-} authToken = result.token; setClientToken(authToken); await loadAccount(); void loadPublishedCoupons(); showToast('Welcome back'); } catch (error) { $('#accountError').textContent = error.message; } });
+} authToken = result.token; setClientToken(authToken); await loadAccount(); void loadPublishedCoupons(); const resumeCheckout = checkoutPendingAuth; checkoutPendingAuth = false; preserveLocalCartOnAuth = false; if (resumeCheckout) { navigatePage('checkout'); return; } showToast('Welcome back'); } catch (error) { $('#accountError').textContent = error.message; } });
 const resetClientHeader = () => { const accountName = $('#accountName'); const accountAvatar = $('#accountAvatar'); const dropdownName = $('#accountDropdownName'); const adminAccess = $('#adminAccess'); const dropdown = $('#accountDropdown'); const adminDashboard = $('#headerAdminDashboard'); const headerKyc = $('#headerKyc'); if (accountName) accountName.textContent = 'Client login'; if (accountAvatar) accountAvatar.textContent = ''; if (dropdownName) dropdownName.textContent = 'Account'; if (adminAccess) adminAccess.hidden = false; if (adminDashboard) adminDashboard.hidden = true; if (headerKyc) headerKyc.hidden = true; if (dropdown) dropdown.hidden = true; };
 const restoreAccountButton = () => { const button = $('#accountToggle'); if (button && !$('#accountAvatar')) button.innerHTML = '<span class="account-avatar" id="accountAvatar" aria-hidden="true"></span><span id="accountName">Account</span><span class="account-chevron">⌄</span>'; };
 document.querySelector('#accountLogout')?.addEventListener('click', () => setTimeout(restoreAccountButton, 0));
 renderAccountBrand();
-const closeAccountModal = () => { $('#accountModal')?.classList.remove('open'); $('#accountModal')?.setAttribute('aria-hidden', 'true'); $('#overlay')?.classList.remove('visible'); };
+const closeAccountModal = () => { if (!authToken) { checkoutPendingAuth = false; preserveLocalCartOnAuth = false; } $('#accountModal')?.classList.remove('open'); $('#accountModal')?.setAttribute('aria-hidden', 'true'); $('#overlay')?.classList.remove('visible'); };
 $('#overlay').addEventListener('click', () => { closeAccountModal(); closeNotificationsModal(); });
 $('#accountModal').addEventListener('click', (event) => { if (event.target === event.currentTarget) closeAccountModal(); });
 $('#notificationClose')?.addEventListener('click', closeNotificationsModal);
@@ -1043,7 +1378,43 @@ applyTheme();
 document.querySelectorAll('[data-theme-toggle]').forEach((toggle) => toggle.addEventListener('click', () => applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark')));
 window.addEventListener('hashchange', routeFromHash);
 restoreState(); renderProducts(); renderCart(); renderWishlist(); loadServerCatalog(); loadDynamicCategories(); loadAccount();
-async function loadStoreConfiguration() { try { const settingsResponse = await fetch('http://localhost:4000/api/v1/settings/public'); if (settingsResponse.ok) { const settings = (await settingsResponse.json()).data; window.applyBrandColors(settings); storeBrand = { name: settings.appName?.trim() || settings.storeName?.trim() || 'Store', logo: settings.storeLogo || '' }; document.title = `${storeBrand.name} - Objects with a point of view`; storeOpen = Boolean(settings.storeStatus); currencyCode = settings.defaultCurrency || 'USD'; taxEnabled = settings.taxEnabled === true || settings.taxEnabled === 'true'; availableCountries = Array.isArray(settings.taxCountries) && settings.taxCountries.length ? settings.taxCountries : availableCountries; configuredPaymentProvider = settings.paymentProvider || 'paystack'; availablePaymentGateways = Array.isArray(settings.paymentGateways) ? settings.paymentGateways : []; configuredSupportEmail = String(settings.supportEmail || '').trim(); configuredSupportWhatsApp = String(settings.supportWhatsApp || '').trim(); syncSupportEmailLink(); syncSupportWhatsAppLink(); renderCountryOptions(); renderPaymentProviders(); updateCheckout(); const mark = document.querySelector('.wordmark-mark'); mark.innerHTML = storeBrand.logo ? `<img src="${escapeHtml(storeBrand.logo)}" alt="">` : escapeHtml(storeBrand.name.charAt(0).toUpperCase()); document.querySelector('.wordmark').lastChild.textContent = ` ${storeBrand.name}`; const footerMark = $('#footerWordmarkMark'); const footerName = $('#footerWordmarkName'); if (footerMark) footerMark.innerHTML = storeBrand.logo ? `<img src="${escapeHtml(storeBrand.logo)}" alt="">` : escapeHtml(storeBrand.name.charAt(0).toUpperCase()); if (footerName) footerName.textContent = storeBrand.name; renderAccountBrand(); document.querySelector('#storeClosed').hidden = storeOpen; if ($('#pageCheckoutForm')) void loadTaxQuote($('#pageCheckoutForm')); renderProducts(); renderCart(); } } catch { /* Keep the storefront available when public settings are offline. */ } }
+async function loadStoreConfiguration() {
+  try {
+    const settingsResponse = await fetch('http://localhost:4000/api/v1/settings/public');
+    if (!settingsResponse.ok) return;
+    const settings = (await settingsResponse.json()).data;
+    window.applyBrandColors(settings);
+    storeBrand = { name: settings.appName?.trim() || settings.storeName?.trim() || 'Store', logo: settings.storeLogo || '' };
+    document.title = `${storeBrand.name} - Objects with a point of view`;
+    storeOpen = Boolean(settings.storeStatus);
+    currencyCode = settings.defaultCurrency || 'USD';
+    taxEnabled = settings.taxEnabled === true || settings.taxEnabled === 'true';
+    availableCountries = Array.isArray(settings.taxCountries) && settings.taxCountries.length ? settings.taxCountries : availableCountries;
+    configuredPaymentProvider = settings.paymentProvider || 'paystack';
+    availablePaymentGateways = Array.isArray(settings.paymentGateways) ? settings.paymentGateways : [];
+    configuredSupportEmail = String(settings.supportEmail || '').trim();
+    configuredSupportWhatsApp = String(settings.supportWhatsApp || '').trim();
+    syncSupportEmailLink();
+    syncSupportWhatsAppLink();
+    renderCountryOptions();
+    renderPaymentProviders();
+    updateCheckout();
+    const mark = document.querySelector('.wordmark-mark');
+    mark.innerHTML = storeBrand.logo ? `<img src="${escapeHtml(storeBrand.logo)}" alt="">` : escapeHtml(storeBrand.name.charAt(0).toUpperCase());
+    document.querySelector('.wordmark').lastChild.textContent = ` ${storeBrand.name}`;
+    const footerMark = $('#footerWordmarkMark');
+    const footerName = $('#footerWordmarkName');
+    if (footerMark) footerMark.innerHTML = storeBrand.logo ? `<img src="${escapeHtml(storeBrand.logo)}" alt="">` : escapeHtml(storeBrand.name.charAt(0).toUpperCase());
+    if (footerName) footerName.textContent = storeBrand.name;
+    renderAccountBrand();
+    document.querySelector('#storeClosed').hidden = storeOpen;
+    if ($('#pageCheckoutForm')) void loadTaxQuote($('#pageCheckoutForm'));
+    renderProducts();
+    renderCart();
+  } catch {
+    // Keep the storefront available when public settings are offline.
+  }
+}
 renderPaymentProviders();
 loadStoreConfiguration();
 async function loadPublicSupportEmail() {
