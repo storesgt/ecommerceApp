@@ -2,6 +2,8 @@ import 'leaflet.marker-motion';
 
 let activeMap;
 let activeVehicle;
+let activeResizeObserver;
+let resizeTimer;
 
 const routePoints = [
   [82, 2],
@@ -21,12 +23,13 @@ const roadLines = [
   [[1, 51], [21, 48], [39, 55], [57, 50], [79, 57], [99, 48]],
 ];
 
-const makePointIcon = (className) => L.divIcon({
-  className,
-  html: '<span aria-hidden="true"></span>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-});
+const mapAreas = [
+  { className: 'tracking-context-park', points: [[97, 8], [92, 23], [82, 25], [78, 16], [84, 5]] },
+  { className: 'tracking-context-park', points: [[34, 72], [30, 84], [20, 87], [15, 77], [22, 68]] },
+  { className: 'tracking-context-block', points: [[88, 63], [93, 67], [91, 73], [85, 72], [83, 67]] },
+  { className: 'tracking-context-block', points: [[14, 33], [20, 31], [23, 37], [18, 42], [12, 39]] },
+];
+const mapIntersections = [[67, 55], [39, 55], [72, 34]];
 
 const vehicleIcon = L.divIcon({
   className: 'tracking-vehicle-marker',
@@ -37,6 +40,10 @@ const vehicleIcon = L.divIcon({
 
 function destroyDeliveryRouteMap() {
   if (activeVehicle && !activeVehicle.isEnded()) activeVehicle.pause();
+  activeResizeObserver?.disconnect();
+  activeResizeObserver = undefined;
+  window.clearTimeout(resizeTimer);
+  resizeTimer = undefined;
   activeMap?.remove();
   activeVehicle = undefined;
   activeMap = undefined;
@@ -46,10 +53,11 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
   destroyDeliveryRouteMap();
   container.replaceChildren();
 
-  const aspectRatio = container.clientWidth > 0 && container.clientHeight > 0
-    ? container.clientHeight / container.clientWidth
-    : 0.45;
-  const verticalScale = Math.max(0.35, Math.min(1.25, aspectRatio));
+  const mapWidth = container.clientWidth || 360;
+  const mapHeight = container.clientHeight || 300;
+  const aspectRatio = mapHeight / mapWidth;
+  const verticalFitScale = Math.max(0.22, (mapHeight - 164) / (mapWidth * 0.625));
+  const verticalScale = Math.max(0.22, Math.min(1.25, aspectRatio, verticalFitScale));
   const toMapPoint = ([latitude, longitude]) => [latitude / 10000 * verticalScale, longitude / 10000];
   const mapRoutePoints = routePoints.map(toMapPoint);
   const map = L.map(container, {
@@ -64,6 +72,15 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
     crs: L.CRS.Simple,
   });
   activeMap = map;
+
+  mapAreas.forEach(({ className, points }) => {
+    L.polygon(points.map(toMapPoint), {
+      className,
+      fillOpacity: 0.8,
+      interactive: false,
+      stroke: false,
+    }).addTo(map);
+  });
 
   roadLines.forEach((road) => {
     L.polyline(road.map(toMapPoint), {
@@ -83,6 +100,17 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
       weight: 3,
     }).addTo(map);
   });
+  mapIntersections.forEach((point) => {
+    L.circleMarker(toMapPoint(point), {
+      className: 'tracking-context-junction',
+      color: '#f8faf8',
+      fillColor: '#f8faf8',
+      fillOpacity: 1,
+      interactive: false,
+      radius: 3,
+      weight: 2,
+    }).addTo(map);
+  });
 
   L.polyline(mapRoutePoints, {
     className: 'tracking-route-base',
@@ -93,9 +121,17 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
     weight: 12,
   }).addTo(map);
   L.polyline(mapRoutePoints, {
+    className: 'tracking-route-surface',
+    color: '#d9e0db',
+    lineCap: 'round',
+    lineJoin: 'round',
+    opacity: 1,
+    weight: 8,
+  }).addTo(map);
+  L.polyline(mapRoutePoints, {
     className: 'tracking-route-centerline',
     color: '#9daaa1',
-    dashArray: '3 8',
+    dashArray: '4 7',
     lineCap: 'round',
     opacity: 0.9,
     weight: 4,
@@ -117,7 +153,16 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
     }).addTo(map);
   }
   if (!isDelivered) {
-    L.polyline([mapRoutePoints[segmentStart], mapRoutePoints[segmentEnd]], {
+    const activeSegment = [mapRoutePoints[segmentStart], mapRoutePoints[segmentEnd]];
+    L.polyline(activeSegment, {
+      className: 'tracking-route-active-halo',
+      color: brandColor,
+      lineCap: 'round',
+      lineJoin: 'round',
+      opacity: 0.24,
+      weight: 18,
+    }).addTo(map);
+    L.polyline(activeSegment, {
       className: 'tracking-route-active',
       color: brandColor,
       lineCap: 'round',
@@ -127,25 +172,67 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
     }).addTo(map);
   }
 
-  L.marker(mapRoutePoints[0], { icon: makePointIcon('tracking-origin-marker'), interactive: false }).addTo(map);
-  L.marker(mapRoutePoints[mapRoutePoints.length - 1], { icon: makePointIcon('tracking-destination-marker'), interactive: false }).addTo(map);
+  const routeBounds = L.latLngBounds(mapRoutePoints);
+  const fitOptions = {
+    animate: false,
+    paddingBottomRight: [0, 32],
+    paddingTopLeft: [0, 132],
+  };
+  map.fitBounds(routeBounds, fitOptions);
 
-  [routePoints[2], routePoints[4]].forEach((point) => {
-    L.marker(toMapPoint(point), {
+  /* All delivery stages shown as curated signposts, alternating sides to avoid road clutter. */
+  const signposts = [
+    { index: 0, label: 'Pending', icon: 'fa-clock', pos: 'right' },
+    { index: 1, label: 'Confirmed', icon: 'fa-circle-check', pos: 'right' },
+    { index: 2, label: 'Processing', icon: 'fa-gears', pos: 'left' },
+    { index: 3, label: 'Packed', icon: 'fa-box', pos: 'right' },
+    { index: 4, label: 'Shipped', icon: 'fa-truck-fast', pos: 'left' },
+    { index: 5, label: 'Out for delivery', icon: 'fa-location-dot', pos: 'left' },
+    { index: 6, label: 'Delivered', icon: 'fa-house', pos: 'left' },
+  ];
+  signposts.forEach(({ index, label, icon, pos }) => {
+    const point = toMapPoint(routePoints[index]);
+    const pointInContainer = map.latLngToContainerPoint(point);
+    const sideOffset = -(32 + (index % 3) * 32);
+    const signpostPoint = map.containerPointToLatLng([
+      pointInContainer.x,
+      pointInContainer.y + sideOffset,
+    ]);
+    const complete = index < targetIndex;
+    const current = index === targetIndex;
+    const upcoming = index > targetIndex;
+    L.polyline([point, signpostPoint], {
+      className: 'tracking-signpost-stem',
+      color: brandColor,
+      interactive: false,
+      opacity: 0.8,
+      weight: 2,
+    }).addTo(map);
+    L.circleMarker(point, {
+      className: 'tracking-signpost-base',
+      color: brandColor,
+      fillColor: brandColor,
+      fillOpacity: 1,
+      interactive: false,
+      radius: 3,
+      weight: 2,
+    }).addTo(map);
+    L.marker(signpostPoint, {
       icon: L.divIcon({
-        className: 'tracking-route-arrow',
-        html: '<span aria-hidden="true">›</span>',
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
+        className: `tracking-signpost pos-${pos} ${complete ? 'is-complete' : ''} ${current ? 'is-current is-active' : ''} ${upcoming ? 'is-upcoming' : ''}`,
+        html: `<span class="tracking-signpost-label"><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${label}</span></span>`,
+        iconSize: [140, 44],
+        iconAnchor: pos === 'left' ? [140, 38] : [0, 38],
       }),
       interactive: false,
+      zIndexOffset: current ? 900 : complete ? 500 : 200,
     }).addTo(map);
   });
 
   const motionPath = isDelivered
     ? [mapRoutePoints[targetIndex], mapRoutePoints[targetIndex]]
     : [mapRoutePoints[segmentStart], mapRoutePoints[segmentEnd], mapRoutePoints[segmentStart]];
-  const vehicle = L.markerMotion(motionPath, 300, {
+  const vehicle = L.markerMotion(motionPath, 35, {
     autoplay: false,
     icon: vehicleIcon,
     loop: !isDelivered,
@@ -158,17 +245,35 @@ function renderDeliveryRouteMap(container, { progressIndex = 0 } = {}) {
     vehicle.start();
   }
 
-  const routeBounds = L.latLngBounds([0, 0], [0.01 * verticalScale, 0.01]);
-  map.fitBounds(routeBounds, { animate: false, padding: [4, 4] });
   requestAnimationFrame(() => {
     if (!container.isConnected) return;
     map.invalidateSize({ pan: false });
     requestAnimationFrame(() => {
       if (!container.isConnected) return;
       map.invalidateSize({ pan: false });
-      map.fitBounds(routeBounds, { animate: false, padding: [4, 4] });
+      map.fitBounds(routeBounds, fitOptions);
     });
   });
+  if (typeof ResizeObserver === 'function') {
+    let observedWidth = container.clientWidth;
+    let observedHeight = container.clientHeight;
+    activeResizeObserver = new ResizeObserver(([entry]) => {
+      if (!container.isConnected) {
+        activeResizeObserver?.disconnect();
+        return;
+      }
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      if (Math.abs(width - observedWidth) < 2 && Math.abs(height - observedHeight) < 2) return;
+      observedWidth = width;
+      observedHeight = height;
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        if (container.isConnected) renderDeliveryRouteMap(container, { progressIndex: targetIndex });
+      }, 120);
+    });
+    activeResizeObserver.observe(container);
+  }
 }
 
 window.destroyDeliveryRouteMap = destroyDeliveryRouteMap;

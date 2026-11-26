@@ -13,7 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20261125-tracking-status-rail-2" />
+  <link rel="stylesheet" href="styles.css?v=20261125-tracking-complete-11" />
   <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
 </head>
 
@@ -242,9 +242,11 @@
     <div class="checkout-coupon"><label>Coupon code<input name="couponCode" placeholder="WELCOME10"
           autocomplete="off"></label><button type="button" class="page-secondary" data-apply-coupon>Apply</button><small
         data-coupon-message></small></div>
+    <div class="published-coupons" id="publishedCoupons" hidden><p class="published-coupons-title">Available offers</p><div class="published-coupons-list" data-published-coupons></div></div>
     <div class="checkout-summary-lines"><span>Discount <b id="checkoutDiscount">-$0.00</b></span><span>Tax <b
           id="checkoutTax">$0.00</b></span></div>
     <div class="checkout-total"><span>Total</span><strong id="checkoutTotal">$0</strong></div>
+    <div class="checkout-support-note"><span>Need help completing your order?</span><a class="support-whatsapp-link" data-support-whatsapp-link data-support-whatsapp-message="Hello, I need help completing my checkout." href="#" target="_blank" rel="noopener noreferrer" hidden><i class="fa-brands fa-whatsapp" aria-hidden="true"></i> WhatsApp support</a></div>
   </div>
   <div class="account-modal" id="accountModal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Account">
     <button class="modal-close" id="accountClose" aria-label="Close account">×</button>
@@ -342,9 +344,10 @@
       <div class="chat-query-list" id="chatQueryList" aria-label="Suggested questions"><button type="button"
           data-chat-query="Where is my order?">Where is my order?</button><button type="button"
           data-chat-query="How does delivery work?">Delivery options</button><button type="button"
-          data-chat-query="I need a return or refund">Returns and refunds</button></div>
-      <button type="button" class="chat-escalate-button" id="chatEscalateButton" hidden><i
-          class="fa-solid fa-user-headset" aria-hidden="true"></i> Ask staff to join</button>
+          data-chat-query="I need a return or refund">Returns and refunds</button><button type="button"
+          data-connect-staff><i class="fa-solid fa-user-headset" aria-hidden="true"></i> Talk to a support agent</button></div>
+      <button type="button" class="chat-escalate-button" id="chatEscalateButton"><i
+          class="fa-solid fa-user-headset" aria-hidden="true"></i> Connect with a support agent</button>
     </section>
     <div class="chat-messages" id="chatMessages">
       <p class="account-muted">Sign in to start a conversation.</p>
@@ -356,7 +359,8 @@
   <script src="node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
   <script src="runtime-config.js?v=20260911"></script>
   <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
-  <script src="app.js?v=20261125-admin-smtp-support-1"></script>
+  <script src="invoice-pdf.bundle.js?v=20261126-invoice-2"></script>
+  <script src="app.js?v=20261126-invoice-2"></script>
 </body>
 
 </html>

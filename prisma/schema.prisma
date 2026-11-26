@@ -259,7 +259,7 @@ model SupportMessage {
   userId    String
   senderId  String?
   senderRole UserRole
-  body      String
+  body      String   @db.Text
   readAt    DateTime?
   createdAt DateTime @default(now())
   user      User     @relation("CustomerSupportMessages", fields: [userId], references: [id], onDelete: Cascade)
@@ -550,11 +550,13 @@ model Coupon {
   startsAt        DateTime?
   expiresAt       DateTime?
   active          Boolean           @default(true)
+  published       Boolean           @default(false)
   redemptions     CouponRedemption[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
   @@index([active, startsAt, expiresAt])
+  @@index([published, active, expiresAt])
 }
 
 model CouponRedemption {

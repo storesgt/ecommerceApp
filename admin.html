@@ -11,7 +11,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700;800&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="admin.css?v=20261125-admin-smtp-support-3" />
+    <link rel="stylesheet" href="admin.css?v=20261125-whatsapp-attention-1" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 </head>
 
@@ -92,6 +92,18 @@
                     attention</small>
             </article>
         </section>
+        <section class="panel attention-panel" id="attentionPanel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Priority queue</p>
+                    <h2>Orders requiring attention</h2>
+                </div>
+                <div class="attention-summary" id="attentionSummary"><span class="attention-pill">Monitoring live orders</span></div>
+            </div>
+            <div class="attention-grid" id="attentionOrders">
+                <div class="attention-empty">Orders that need review will appear here.</div>
+            </div>
+        </section>
         <section class="dashboard-grid">
             <article class="panel revenue-panel">
                 <div class="panel-heading">
@@ -136,9 +148,14 @@
                     </div>
                     <div class="order-tools"><select id="orderFilter" aria-label="Filter orders">
                             <option value="all">All statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="confirmed">Confirmed</option>
                             <option value="processing">Processing</option>
+                            <option value="packed">Packed</option>
                             <option value="shipped">Shipped</option>
+                            <option value="out_for_delivery">Out for delivery</option>
                             <option value="delivered">Delivered</option>
+                            <option value="cancelled">Cancelled</option>
                         </select><a href="#orders">View all ↗</a></div>
                 </div>
                 <table>
@@ -207,7 +224,7 @@
             <article class="panel inventory-panel" id="inventory">
                 <div class="panel-heading">
                     <div>
-                        <p class="eyebrow">Needs attention</p>
+                        <p class="eyebrow">Inventory signal</p>
                         <h2>Low stock</h2>
                     </div><a href="#inventory">Manage ↗</a>
                 </div>
@@ -420,7 +437,9 @@
                         primary actions, highlights, and interactive states throughout the storefront and admin.</small>
                 </div>
                 <div class="admin-field-grid"><label>Support email<input name="supportEmail"
-                            type="email" autocomplete="email"><small>Published to customers as your support contact.</small></label><label>Currency<select name="defaultCurrency">
+                            type="email" autocomplete="email"><small>Published to customers as your support contact.</small></label><label>Support WhatsApp<input name="supportWhatsApp"
+                            type="tel" autocomplete="tel" placeholder="+233..."><small>Used for WhatsApp support buttons at checkout and order tracking.</small></label></div>
+                <div class="admin-field-grid"><label>Currency<select name="defaultCurrency">
                             <option>USD</option>
                             <option>GHS</option>
                             <option>GBP</option>
@@ -679,7 +698,7 @@
     <script src="/node_modules/sweetalert2/dist/sweetalert2.all.min.js"></script>
     <script src="runtime-config.js?v=20260911"></script>
     <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
-    <script src="admin.js?v=20261125-admin-smtp-support-4"></script>
+    <script src="admin.js?v=20261125-whatsapp-attention-1"></script>
 </body>
 
 </html>

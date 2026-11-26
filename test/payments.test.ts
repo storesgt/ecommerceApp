@@ -2,7 +2,19 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import { normalizeKycSubmitBody } from '../server/src/modules/users';
+import { paymentInitializationErrorMessage } from '../server/src/modules/payments';
 import { PaystackProvider } from '../server/src/payments/adapters';
+
+test('unsupported Paystack currency errors explain the required currency configuration', () => {
+  const message = paymentInitializationErrorMessage(new Error('Paystack request failed (HTTP 403): Currency not supported by merchant'), 'paystack', 'GHS');
+  assert.match(message, /does not support GHS/);
+  assert.match(message, /Admin Settings/);
+  assert.match(message, /not converted automatically/);
+});
+
+test('payment initialization preserves unrelated provider errors', () => {
+  assert.equal(paymentInitializationErrorMessage(new Error('Network unavailable'), 'paystack', 'GHS'), 'Network unavailable');
+});
 
 test('Paystack webhook signatures accept the exact HMAC digest', () => {
   const provider = new PaystackProvider();

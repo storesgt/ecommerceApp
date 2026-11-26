@@ -113,7 +113,8 @@ router.get('/:orderNumber/receipt', requireAuth, async (request, response, next)
     if (typeof orderNumberParam !== 'string') return response.status(400).json({ error: 'Invalid order number' });
     const order = await prisma.order.findUnique({ where: { orderNumber: orderNumberParam }, include: { items: true, address: true, payments: { orderBy: { createdAt: 'desc' }, take: 1 } } });
     if (!order || (request.user!.role === 'CUSTOMER' && order.userId !== request.user!.id)) return response.status(404).json({ error: 'Order not found' });
-    return response.json({ data: { invoiceNumber: `INV-${order.orderNumber}`, orderNumber: order.orderNumber, issuedAt: order.createdAt, currency: order.currency, subtotal: Number(order.subtotal), shipping: Number(order.shipping), tax: Number(order.tax), serviceFee: Number(order.serviceFee), discount: Number(order.discount), total: Number(order.total), status: order.status, paymentStatus: order.paymentStatus, address: order.address, items: order.items, payment: order.payments[0] || null } });
+    const redemption = await prisma.couponRedemption.findFirst({ where: { orderId: order.id }, include: { coupon: { select: { code: true } } } });
+    return response.json({ data: { invoiceNumber: `INV-${order.orderNumber}`, orderNumber: order.orderNumber, issuedAt: order.createdAt, currency: order.currency, subtotal: Number(order.subtotal), shipping: Number(order.shipping), tax: Number(order.tax), serviceFee: Number(order.serviceFee), discount: Number(order.discount), couponCode: redemption?.coupon.code || null, total: Number(order.total), status: order.status, paymentStatus: order.paymentStatus, address: order.address, items: order.items, payment: order.payments[0] || null } });
   } catch (error) { return next(error); }
 });
 

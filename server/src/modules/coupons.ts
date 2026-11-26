@@ -5,7 +5,7 @@ import { requireAuth, requireRole } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
-const createInput = z.object({ code: z.string().min(3).max(40).regex(/^[A-Za-z0-9_-]+$/), type: z.enum(['PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING']), value: z.coerce.number().nonnegative(), minimumOrder: z.coerce.number().nonnegative().optional(), maximumDiscount: z.coerce.number().nonnegative().optional(), usageLimit: z.coerce.number().int().positive().optional(), startsAt: z.coerce.date().optional(), expiresAt: z.coerce.date().optional(), active: z.boolean().default(true) });
+const createInput = z.object({ code: z.string().min(3).max(40).regex(/^[A-Za-z0-9_-]+$/), type: z.enum(['PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING']), value: z.coerce.number().nonnegative(), minimumOrder: z.coerce.number().nonnegative().optional(), maximumDiscount: z.coerce.number().nonnegative().optional(), usageLimit: z.coerce.number().int().positive().optional(), startsAt: z.coerce.date().optional(), expiresAt: z.coerce.date().optional(), active: z.boolean().default(true), published: z.boolean().default(false) });
 const validateInput = z.object({ code: z.string().min(3), subtotal: z.coerce.number().nonnegative(), shipping: z.coerce.number().nonnegative().default(0) });
 const endOfExpiryDay = (value?: Date) => { if (!value) return value; const expiry = new Date(value); expiry.setHours(23, 59, 59, 999); return expiry; };
 
@@ -14,6 +14,23 @@ router.post('/', requireAuth, requireRole('ADMIN'), requirePermission('coupons.m
 });
 
 router.get('/', requireAuth, requirePermission('coupons.read'), async (_request, response, next) => { try { return response.json({ data: await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } }) }); } catch (error) { return next(error); } });
+
+router.get('/public', async (_request, response, next) => {
+  try {
+    const now = new Date();
+    const coupons = await prisma.coupon.findMany({
+      where: {
+        active: true,
+        published: true,
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }]
+      },
+      orderBy: [{ expiresAt: 'asc' }, { createdAt: 'desc' }],
+      select: { code: true, type: true, value: true, minimumOrder: true, maximumDiscount: true, expiresAt: true }
+    });
+    return response.json({ data: coupons });
+  } catch (error) { return next(error); }
+});
 
 router.patch('/:couponId', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => { try { const couponId = request.params.couponId; if (typeof couponId !== 'string') return response.status(400).json({ error: 'Invalid coupon ID' }); const input = createInput.partial().parse(request.body); if (input.type === 'PERCENTAGE' && input.value !== undefined && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' }); const coupon = await prisma.coupon.update({ where: { id: couponId }, data: { ...input, ...(input.expiresAt ? { expiresAt: endOfExpiryDay(input.expiresAt) } : {}), ...(input.code ? { code: input.code.toUpperCase() } : {}) } }); return response.json({ data: coupon }); } catch (error) { return next(error); } });
 router.delete('/:couponId', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => { try { const couponId = request.params.couponId; if (typeof couponId !== 'string') return response.status(400).json({ error: 'Invalid coupon ID' }); await prisma.coupon.update({ where: { id: couponId }, data: { active: false } }); return response.status(204).send(); } catch (error) { return next(error); } });

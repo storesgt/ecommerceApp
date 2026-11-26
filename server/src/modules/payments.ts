@@ -10,6 +10,14 @@ const router = Router();
 const providerInput = z.object({ provider: z.enum(['paystack', 'hubtel', 'mpesa']), paymentId: z.string().cuid(), email: z.string().email().optional() });
 const webhookInput = z.object({ eventId: z.string().min(1), reference: z.string().min(1), status: z.enum(['SUCCESS', 'FAILED', 'PROCESSING', 'CANCELLED', 'EXPIRED']) });
 
+export function paymentInitializationErrorMessage(error: unknown, provider: string, currency: string): string {
+  const message = error instanceof Error ? error.message : 'The payment provider could not start this transaction.';
+  if (provider === 'paystack' && /Paystack request failed \(HTTP 403\): Currency not supported by merchant/i.test(message)) {
+    return `Paystack does not support ${currency.toUpperCase()} for this merchant account. Enable ${currency.toUpperCase()} in the Paystack account, or change the store currency in Admin Settings to a currency the account supports. Prices are not converted automatically.`;
+  }
+  return message;
+}
+
 router.get('/paystack/callback', async (request, response, next) => {
   try {
     const reference = typeof request.query.reference === 'string' ? request.query.reference : '';
@@ -38,10 +46,12 @@ router.get('/paystack/callback', async (request, response, next) => {
 router.post('/initialize', requireAuth, async (request, response, next) => {
   const parsedInput = providerInput.safeParse(request.body);
   if (!parsedInput.success) return response.status(400).json({ error: 'Invalid payment initialization request', message: parsedInput.error.issues.map((issue) => `${issue.path.join('.') || 'request'}: ${issue.message}`).join('; ') });
+  let paymentCurrency = '';
   try {
     const input = parsedInput.data;
     let payment = await prisma.payment.findUnique({ where: { id: input.paymentId }, include: { order: { include: { user: { select: { email: true } } } } } });
     if (!payment || (request.user!.role === 'CUSTOMER' && payment.order.userId !== request.user!.id)) return response.status(404).json({ error: 'Payment not found' });
+    paymentCurrency = payment.currency;
     const reference = payment.status === 'SUCCESS' ? payment.reference : `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const provider = providers[input.provider];
     if (provider.configure) { const rows = await prisma.appSetting.findMany({ where: { key: { in: ['paystackSecretKey', 'paystackPublicKey', 'paymentGateways'] } } }); const settings = Object.fromEntries(rows.map((row) => [row.key, row.value])); const gateway = Array.isArray(settings.paymentGateways) ? settings.paymentGateways.find((entry) => entry && typeof entry === 'object' && (entry as { id?: string }).id === input.provider) as Record<string, string> | undefined : undefined; provider.configure({ secretKey: gateway?.secretKey || String(settings.paystackSecretKey || ''), publicKey: gateway?.publicKey || String(settings.paystackPublicKey || ''), clientId: gateway?.clientId, clientSecret: gateway?.clientSecret, merchantAccount: gateway?.merchantAccount, apiUrl: gateway?.apiUrl, callbackUrl: gateway?.callbackUrl, webhookSecret: gateway?.webhookSecret }); }
@@ -56,7 +66,7 @@ router.post('/initialize', requireAuth, async (request, response, next) => {
       return savedPayment;
     });
     return response.json({ data: updated, provider: result });
-  } catch (error) { console.error('Payment initialization failed:', error); return response.status(502).json({ error: 'Payment provider initialization failed', message: error instanceof Error ? error.message : 'The payment provider could not start this transaction.' }); }
+  } catch (error) { console.error('Payment initialization failed:', error); return response.status(502).json({ error: 'Payment provider initialization failed', message: paymentInitializationErrorMessage(error, parsedInput.data.provider, paymentCurrency) }); }
 });
 
 router.post('/:paymentId/verify', requireAuth, async (request, response, next) => {
