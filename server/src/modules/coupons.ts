@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { requireAuth, requireRole } from '../middleware/auth';
+import { optionalAuth, requireAuth, requireRole } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
@@ -17,22 +17,27 @@ export function isPublicCoupon(coupon: { usageLimit: number | null; usedCount: n
   return coupon.usageLimit !== 1 && (coupon.usageLimit === null || coupon.usedCount < coupon.usageLimit);
 }
 
+export function publicCouponWhere(now: Date, userId?: string) {
+  return {
+    active: true,
+    published: true,
+    OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+    AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }],
+    ...(userId ? { redemptions: { none: { userId } } } : {})
+  };
+}
+
 router.post('/', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => {
   try { const input = createInput.parse(request.body); if (input.type === 'PERCENTAGE' && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' }); const coupon = await prisma.coupon.create({ data: { ...input, published: input.usageLimit === 1 ? false : input.published, expiresAt: endOfExpiryDay(input.expiresAt), code: input.code.toUpperCase() } }); return response.status(201).json({ data: coupon }); } catch (error) { return next(error); }
 });
 
 router.get('/', requireAuth, requirePermission('coupons.read'), async (_request, response, next) => { try { const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } }); return response.json({ data: coupons.map(redactSingleUseCoupon) }); } catch (error) { return next(error); } });
 
-router.get('/public', async (_request, response, next) => {
+router.get('/public', optionalAuth, async (request, response, next) => {
   try {
     const now = new Date();
     const coupons = await prisma.coupon.findMany({
-      where: {
-        active: true,
-        published: true,
-        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
-        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }]
-      },
+      where: publicCouponWhere(now, request.user?.id),
       orderBy: [{ expiresAt: 'asc' }, { createdAt: 'desc' }],
       select: { code: true, type: true, value: true, minimumOrder: true, maximumDiscount: true, expiresAt: true, usageLimit: true, usedCount: true }
     });

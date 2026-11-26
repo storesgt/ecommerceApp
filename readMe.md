@@ -2,7 +2,18 @@
 
 The project now contains a working commerce foundation alongside the visual prototype.
 
-## Run The Backend
+## Deployment
+
+- [Step-by-step cPanel deployment guide](./CPANEL_DEPLOYMENT.md) for a live Linux
+  cPanel host.
+- [Standalone Linux/Docker deployment guide](./DEPLOY.md) for a VPS that
+  supports Docker Compose.
+
+## Run The Backend Locally
+
+These are local-development steps. For a live cPanel server, follow the
+[cPanel deployment guide](./CPANEL_DEPLOYMENT.md); do not use the development
+schema-push command on a production database.
 
 1. Install MySQL 8 or newer and create a database named `ground`.
 2. Copy `.env.example` to `.env` and set `DATABASE_URL` and a strong `JWT_SECRET`.

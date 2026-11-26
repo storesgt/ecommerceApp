@@ -21,6 +21,11 @@ export async function requireAuth(request: Request, response: Response, next: Ne
   }
 }
 
+export async function optionalAuth(request: Request, response: Response, next: NextFunction) {
+  if (!request.headers.authorization) return next();
+  return requireAuth(request, response, next);
+}
+
 export function requireRole(...roles: UserRole[]) {
   return (request: Request, response: Response, next: NextFunction) => {
     const staffRoles: UserRole[] = ['STAFF', 'FINANCE_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT_AGENT', 'WAREHOUSE_STAFF'];
