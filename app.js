@@ -136,7 +136,64 @@ function applySavedAddress(form, address) {
   set('gpsAddress', address.instructions);
   form.dataset.checkoutAddressId = address.id;
   applyCheckoutFieldValidation(form);
-  form.querySelector('select[name="country"]')?.dispatchEvent(new Event('change', { bubbles: true }));
+  form.elements.namedItem('country')?.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function setCheckoutAddressModal(form, modal, fields, open) {
+  modal.setAttribute('aria-hidden', String(!open));
+  document.body.classList.toggle('checkout-address-modal-open', open);
+  for (const control of fields.querySelectorAll('input, select')) control.disabled = !open;
+  if (open) {
+    if (!modal.open) modal.showModal();
+    requestAnimationFrame(() => fields.querySelector('input[name="address"]')?.focus());
+  } else if (modal.open) {
+    modal.close();
+  }
+  if (!open) form.querySelector('[data-checkout-add-address]')?.focus();
+}
+async function saveCheckoutAddress(form, modal, fields, addresses, renderAddresses, saveButton) {
+  const message = modal.querySelector('[data-checkout-address-message]');
+  if (!message) return;
+  const invalidField = [...fields.querySelectorAll('input[required], select[required]')].find((field) => !field.disabled && !field.checkValidity());
+  if (invalidField) {
+    invalidField.reportValidity();
+    return;
+  }
+  const data = new FormData(form);
+  const recipientName = `${data.get('firstName') || ''} ${data.get('lastName') || ''}`.trim();
+  if (!recipientName || !String(data.get('phone') || '').trim()) {
+    message.textContent = 'Enter a contact name and phone number before saving this address.';
+    (form.elements.namedItem(!data.get('firstName') ? 'firstName' : 'phone'))?.focus();
+    return;
+  }
+  saveButton.disabled = true;
+  message.textContent = 'Saving address…';
+  try {
+    const response = await fetch('http://localhost:4000/api/v1/addresses', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        fullName: recipientName,
+        phone: data.get('phone'),
+        country: data.get('country'),
+        city: data.get('city'),
+        addressLine1: data.get('address'),
+        instructions: data.get('gpsAddress'),
+        isDefault: addresses.length === 0
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || payload.error || 'Unable to save this address.');
+    addresses.unshift(payload.data);
+    checkoutAddresses.set(form, addresses);
+    applySavedAddress(form, payload.data);
+    renderAddresses(payload.data.id);
+    setCheckoutAddressModal(form, modal, fields, false);
+    showToast('Address saved and selected for checkout.');
+  } catch (error) {
+    message.textContent = error.message || 'Unable to save this address.';
+  } finally {
+    saveButton.disabled = false;
+  }
 }
 async function enhanceCheckoutAddressSelector(formSelector) {
   const form = document.querySelector(formSelector);
@@ -166,13 +223,19 @@ async function enhanceCheckoutAddressSelector(formSelector) {
   const picker = document.createElement('section');
   picker.className = 'checkout-address-picker';
   picker.innerHTML = `<div class="checkout-address-heading"><div><span class="checkout-section-kicker">DELIVERY ADDRESS</span><strong>Choose where to send your order</strong></div><span class="checkout-address-count">${addresses.length ? `${addresses.length} saved` : 'New address'}</span></div><div class="checkout-address-list" role="group" aria-label="Saved delivery addresses"></div><button type="button" class="checkout-add-address" data-checkout-add-address><span aria-hidden="true">＋</span> Add a new address</button>`;
-  const fields = document.createElement('div');
-  fields.className = 'checkout-new-address-fields';
-  fields.hidden = addresses.length > 0;
+  const modal = document.createElement('dialog');
+  modal.className = 'checkout-address-modal';
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `<button type="button" class="checkout-address-backdrop" data-checkout-close-address-modal aria-label="Close address dialog"></button><section class="checkout-address-dialog" aria-labelledby="checkoutAddressTitle-${form.id}"><header><div><span class="checkout-section-kicker">DELIVERY DETAILS</span><h2 id="checkoutAddressTitle-${form.id}">Add a new address</h2></div><button type="button" class="checkout-address-close" data-checkout-close-address-modal aria-label="Close address dialog">×</button></header><div class="checkout-new-address-fields"></div><footer><button type="button" class="page-secondary" data-checkout-close-address-modal>Cancel</button><button type="button" class="page-primary" data-checkout-save-address>Save address <span>↗</span></button></footer><p class="checkout-address-message" data-checkout-address-message aria-live="polite"></p></section>`;
+  const fields = modal.querySelector('.checkout-new-address-fields');
   addressLabels[0].before(picker);
-  addressLabels[0].before(fields);
-  addressLabels.forEach((label) => fields.append(label));
-  fields.insertAdjacentHTML('beforeend', '<button type="button" class="page-secondary checkout-save-address" data-checkout-save-address>Save address to my account</button><p class="checkout-address-message" data-checkout-address-message aria-live="polite"></p>');
+  addressLabels.forEach((label) => {
+    const control = label.querySelector('input, select');
+    control?.setAttribute('form', form.id);
+    if (control) control.disabled = true;
+    fields.append(label);
+  });
+  document.body.append(modal);
 
   const renderAddresses = (selectedId = '') => {
     const list = picker.querySelector('.checkout-address-list');
@@ -185,15 +248,49 @@ async function enhanceCheckoutAddressSelector(formSelector) {
       return `<button type="button" class="checkout-address-card${selected ? ' selected' : ''}" data-checkout-address-id="${escapeHtml(address.id)}" aria-pressed="${selected}"><span class="checkout-address-radio" aria-hidden="true"></span><span class="checkout-address-copy"><strong>${escapeHtml(address.fullName)}</strong><small>${escapeHtml(address.addressLine1)}${address.addressLine2 ? `, ${escapeHtml(address.addressLine2)}` : ''}</small><small>${escapeHtml(address.city)}, ${escapeHtml(country)} · ${escapeHtml(address.phone)}</small></span>${address.isDefault ? '<span class="checkout-address-default">Default</span>' : ''}</button>`;
     }).join('') : '<p class="checkout-address-empty">Add an address to make checkout faster next time.</p>';
   };
-  renderAddresses();
   const defaultAddress = addresses.find((address) => address.isDefault) || addresses[0];
   if (defaultAddress) {
     renderAddresses(defaultAddress.id);
     applySavedAddress(form, defaultAddress);
-    fields.hidden = true;
   }
-  picker.dataset.addressListReady = 'true';
-  checkoutAddressUi.set(form, { renderAddresses, fields });
+  const ui = { renderAddresses, fields, modal };
+  checkoutAddressUi.set(form, ui);
+  picker.querySelector('.checkout-address-list')?.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-checkout-address-id]');
+    const address = addresses.find((item) => item.id === card?.dataset.checkoutAddressId);
+    if (!address) return;
+    applySavedAddress(form, address);
+    renderAddresses(address.id);
+  });
+  const closeAddressModal = () => {
+    setCheckoutAddressModal(form, modal, fields, false);
+    const previousAddress = addresses.find((address) => address.id === ui.previousAddressId);
+    if (previousAddress) {
+      applySavedAddress(form, previousAddress);
+      renderAddresses(previousAddress.id);
+    } else {
+      form.dataset.checkoutAddressId = '';
+      renderAddresses('');
+    }
+  };
+  picker.querySelector('[data-checkout-add-address]')?.addEventListener('click', () => {
+    ui.previousAddressId = form.dataset.checkoutAddressId || '';
+    form.dataset.checkoutAddressId = '';
+    renderAddresses('');
+    for (const name of ['address', 'city', 'gpsAddress', 'postal', 'country']) {
+      const field = form.elements.namedItem(name);
+      if (field) field.value = '';
+    }
+    modal.querySelector('[data-checkout-address-message]').textContent = '';
+    setCheckoutAddressModal(form, modal, fields, true);
+  });
+  modal.querySelectorAll('[data-checkout-close-address-modal]').forEach((button) => button.addEventListener('click', closeAddressModal));
+  modal.addEventListener('cancel', (event) => { event.preventDefault(); closeAddressModal(); });
+  modal.addEventListener('click', (event) => { if (event.target === modal) closeAddressModal(); });
+  modal.querySelector('[data-checkout-save-address]')?.addEventListener('click', (event) => {
+    const button = event.currentTarget;
+    void saveCheckoutAddress(form, modal, fields, addresses, renderAddresses, button);
+  });
 }
 async function renderAddressBook() {
   const frame = appPage.querySelector('.page-frame');
@@ -201,10 +298,31 @@ async function renderAddressBook() {
   const addresses = await fetchSavedAddresses();
   const panel = document.createElement('section');
   panel.className = 'page-panel address-book-panel';
-  const render = (items) => `<div class="panel-label">Saved addresses <span>${items.length} saved</span></div><div class="saved-address-list">${items.length ? items.map((address) => `<article class="saved-address-card" data-address-id="${escapeHtml(address.id)}"><div class="saved-address-summary"><strong>${escapeHtml(address.fullName)}</strong><p>${escapeHtml(address.addressLine1)}${address.addressLine2 ? `, ${escapeHtml(address.addressLine2)}` : ''}<br>${escapeHtml(address.city)}, ${escapeHtml(address.country)}${address.instructions ? `<br>GPS: ${escapeHtml(address.instructions)}` : ''}<br>${escapeHtml(address.phone)}</p></div><div class="saved-address-actions">${address.isDefault ? '<span class="address-default">Default</span>' : '<button type="button" class="address-action" data-address-default>Make default</button>'}<button type="button" class="address-action" data-address-edit>Edit</button></div></article>`).join('') : '<p class="page-empty">No saved addresses yet.</p>'}</div><form class="address-form" id="addressForm"><div class="panel-label">Add an address</div><div class="page-field-grid"><label>Full name<input name="fullName" required></label><label>Phone<input name="phone" required></label></div><div class="page-field-grid"><label>Country<input name="country" required></label><label>City<input name="city" required></label></div><div class="page-field-grid"><label>Address<input name="addressLine1" required></label><label>GPS address / landmark <small>(optional)</small><input name="instructions"></label></div><label class="address-default-toggle"><input type="checkbox" name="isDefault"> Make this my default address</label><button class="page-primary" type="submit">Save address <span>↗</span></button><p class="page-message" id="addressFormMessage"></p></form>`;
+  const render = (items) => `<div class="address-book-heading"><div class="panel-label">Saved addresses <span>${items.length} saved</span></div><button type="button" class="page-primary" data-address-add>＋ Add an address</button></div><div class="saved-address-list">${items.length ? items.map((address) => `<article class="saved-address-card" data-address-id="${escapeHtml(address.id)}"><div class="saved-address-summary"><strong>${escapeHtml(address.fullName)}</strong><p>${escapeHtml(address.addressLine1)}${address.addressLine2 ? `, ${escapeHtml(address.addressLine2)}` : ''}<br>${escapeHtml(address.city)}, ${escapeHtml(address.country)}${address.instructions ? `<br>GPS: ${escapeHtml(address.instructions)}` : ''}<br>${escapeHtml(address.phone)}</p></div><div class="saved-address-actions">${address.isDefault ? '<span class="address-default">Default</span>' : '<button type="button" class="address-action" data-address-default>Make default</button>'}<button type="button" class="address-action" data-address-edit>Edit</button></div></article>`).join('') : '<p class="page-empty">No saved addresses yet.</p>'}</div>`;
   panel.innerHTML = render(addresses);
   frame.append(panel);
-  const refresh = async (message) => { panel.remove(); await renderAddressBook(); if (message) showToast(message); };
+  const addressModal = document.createElement('dialog');
+  addressModal.className = 'address-book-modal';
+  addressModal.setAttribute('aria-labelledby', 'addressBookAddTitle');
+  addressModal.innerHTML = '<section class="checkout-address-dialog"><header><div><span class="checkout-section-kicker">ADDRESS BOOK</span><h2 id="addressBookAddTitle">Add an address</h2></div><button type="button" class="checkout-address-close" data-address-modal-close aria-label="Close address dialog">×</button></header><form class="address-form" id="addressForm"><div class="page-field-grid"><label>Full name<input name="fullName" autocomplete="name" required></label><label>Phone<input name="phone" type="tel" autocomplete="tel" required></label></div><div class="page-field-grid"><label>Country<input name="country" autocomplete="country-name" required></label><label>City<input name="city" autocomplete="address-level2" required></label></div><label>Address<input name="addressLine1" autocomplete="street-address" required></label><label>GPS address / landmark <small>(optional)</small><input name="instructions"></label><label class="address-default-toggle"><input type="checkbox" name="isDefault"> Make this my default address</label><button class="page-primary" type="submit">Save address <span>↗</span></button><p class="page-message" aria-live="polite"></p></form></section>';
+  const addressForm = addressModal.querySelector('#addressForm');
+  const addAddressButton = panel.querySelector('[data-address-add]');
+  const closeAddressModal = (restoreFocus = true) => {
+    if (addressModal.open) addressModal.close();
+    addressModal.remove();
+    if (restoreFocus && addAddressButton?.isConnected) addAddressButton.focus();
+  };
+  const refresh = async (message) => { closeAddressModal(false); panel.remove(); await renderAddressBook(); if (message) showToast(message); };
+  addAddressButton?.addEventListener('click', () => {
+    addressForm.reset();
+    addressForm.querySelector('.page-message').textContent = '';
+    if (!addressModal.isConnected) document.body.append(addressModal);
+    addressModal.showModal();
+    requestAnimationFrame(() => addressForm.elements.fullName.focus());
+  });
+  addressModal.querySelectorAll('[data-address-modal-close]').forEach((button) => button.addEventListener('click', () => closeAddressModal()));
+  addressModal.addEventListener('cancel', (event) => { event.preventDefault(); closeAddressModal(); });
+  addressModal.addEventListener('click', (event) => { if (event.target === addressModal) closeAddressModal(); });
   panel.querySelector('.saved-address-list')?.addEventListener('click', async (event) => {
     const card = event.target.closest('[data-address-id]');
     if (!card) return;
@@ -231,14 +349,22 @@ async function renderAddressBook() {
     await refresh('Address updated.');
   });
   panel.querySelector('.saved-address-list')?.addEventListener('click', (event) => { if (!event.target.closest('[data-address-cancel]')) return; void refresh(); });
-  panel.querySelector('#addressForm').addEventListener('submit', async (event) => {
+  addressForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const response = await fetch('http://localhost:4000/api/v1/addresses', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ fullName: data.get('fullName'), phone: data.get('phone'), country: data.get('country'), city: data.get('city'), addressLine1: data.get('addressLine1'), instructions: data.get('instructions'), isDefault: data.get('isDefault') === 'on' }) });
-    if (!response.ok) { $('#addressFormMessage').textContent = 'Could not save this address.'; return; }
-    showToast('Address saved.');
-    panel.remove();
-    await renderAddressBook();
+    const data = new FormData(addressForm);
+    const message = addressForm.querySelector('.page-message');
+    const submitButton = addressForm.querySelector('[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      const response = await fetch('http://localhost:4000/api/v1/addresses', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ fullName: data.get('fullName'), phone: data.get('phone'), country: data.get('country'), city: data.get('city'), addressLine1: data.get('addressLine1'), instructions: data.get('instructions'), isDefault: data.get('isDefault') === 'on' }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || payload.error || 'Could not save this address.');
+      await refresh('Address saved.');
+    } catch (error) {
+      message.textContent = error instanceof Error ? error.message : 'Could not save this address.';
+    } finally {
+      submitButton.disabled = false;
+    }
   });
 }
 async function renderKycPage() {
@@ -561,11 +687,17 @@ async function syncCartItem(productId, quantity) { if (!authToken) return; const
 let featuredProducts = [];
 let featuredOffset = 0;
 let featuredTimer = null;
+let featuredHeroIndex = 0;
+let featuredHeroTimer = null;
+let featuredHeroQueue = [];
 async function recordProductView(productId) { const id = normalizeProductId(productId); if (!id) return; const product = products.find((entry) => normalizeProductId(entry.id) === id); if (product) product.viewCount = Number(product.viewCount || 0) + 1; try { await fetch(`http://localhost:4000/api/v1/products/${encodeURIComponent(id)}/view`, { method: 'POST' }); } catch { /* View analytics should not interrupt shopping. */ } }
-async function loadServerCatalog() { try { const response = await fetch('http://localhost:4000/api/v1/products?status=ACTIVE&take=100'); if (!response.ok) return; const payload = await response.json(); products = (payload.data || []).map((product) => { const images = product.images?.map((image) => image.url).filter(Boolean) || []; return { id: product.id, name: product.name, category: product.category?.name || 'Uncategorized', categoryId: product.category?.id || '', price: Number(product.price), rating: 5, image: images[0] || '', images, description: product.description || product.shortDescription || '', usage: product.usage || '', features: product.features || '', stock: product.inventory?.available ?? 0, viewCount: Number(product.viewCount || 0), featured: Boolean(product.featured) }; }); featuredProducts = products.filter((product) => product.featured); await Promise.allSettled(products.map((product) => loadProductReviews(product.id))); renderProducts(); renderWishlist(); renderFeaturedProducts(); renderDynamicHero(); renderDynamicCategories(); startFeaturedCarousel(); } catch { products = []; renderProducts(); renderFeaturedProducts(); renderDynamicHero(); renderDynamicCategories(); } }
-function renderDynamicHero() { const product = featuredProducts[0]; const copy = $('#featuredHeroCopy'); const image = $('#featuredHeroImage'); if (!copy || !image) return; if (!product) { copy.innerHTML = '<p class="eyebrow">Featured products</p><h1 id="hero-title">Your next<br><em>favorite thing.</em></h1><p class="hero-description">Products selected by the Ground team will appear here.</p>'; image.innerHTML = '<div class="hero-empty">No featured products yet.</div>'; return; } copy.innerHTML = `<p class="eyebrow">Featured product</p><h1 id="hero-title">${escapeHtml(product.name)}</h1><p class="hero-description">${escapeHtml(product.description || 'A product selected by the Ground team.')}</p><button class="hero-order-link" type="button" data-view="${escapeHtml(product.id)}">View product ↗</button>`; image.innerHTML = product.image ? `<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"><div class="hero-note"><span>Featured</span><span>${escapeHtml(product.category)}</span></div>` : '<div class="hero-empty">This featured product has no image.</div>'; }
-function renderFeaturedProducts() { const container = $('#featuredProductCarousel'); if (!container) return; if (!featuredProducts.length) { container.innerHTML = '<p class="category-loading">No featured products selected by the admin yet.</p>'; return; } const visible = [...featuredProducts, ...featuredProducts].slice(featuredOffset, featuredOffset + Math.min(3, featuredProducts.length)); container.innerHTML = visible.map((product) => `<article class="top-product-card" data-view="${escapeHtml(product.id)}" tabindex="0" role="button" aria-label="View ${escapeHtml(product.name)}"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"><div><span>${escapeHtml(product.category)}</span><h3>${escapeHtml(product.name)}</h3><strong>${money(product.price)}</strong></div><button type="button" data-view="${escapeHtml(product.id)}" aria-label="View ${escapeHtml(product.name)}">View ↗</button></article>`).join(''); }
-function startFeaturedCarousel() { clearInterval(featuredTimer); const container = $('#featuredProductCarousel'); if (!container || featuredProducts.length < 2) return; featuredTimer = setInterval(() => { featuredOffset = (featuredOffset + 1) % featuredProducts.length; renderFeaturedProducts(); }, 4200); if (!container.dataset.carouselBound) { container.dataset.carouselBound = 'true'; container.addEventListener('mouseenter', () => clearInterval(featuredTimer)); container.addEventListener('mouseleave', startFeaturedCarousel); } }
+async function loadServerCatalog() { try { const response = await fetch('http://localhost:4000/api/v1/products?status=ACTIVE&take=100'); if (!response.ok) return; const payload = await response.json(); products = (payload.data || []).map((product) => { const images = product.images?.map((image) => image.url).filter(Boolean) || []; return { id: product.id, name: product.name, category: product.category?.name || 'Uncategorized', categoryId: product.category?.id || '', price: Number(product.price), rating: 5, image: images[0] || '', images, description: product.description || product.shortDescription || '', usage: product.usage || '', features: product.features || '', stock: product.inventory?.available ?? 0, viewCount: Number(product.viewCount || 0), featured: Boolean(product.featured) }; }); featuredProducts = products.filter((product) => product.featured); featuredHeroIndex = featuredProducts.length ? Math.floor(Math.random() * featuredProducts.length) : 0; featuredHeroQueue = []; await Promise.allSettled(products.map((product) => loadProductReviews(product.id))); renderProducts(); renderWishlist(); renderFeaturedProducts(); renderDynamicHero(); renderDynamicCategories(); startFeaturedCarousel(); startFeaturedHeroCarousel(); } catch { clearInterval(featuredTimer); clearInterval(featuredHeroTimer); products = []; featuredProducts = []; renderProducts(); renderFeaturedProducts(); renderDynamicHero(); renderDynamicCategories(); } }
+function shuffleFeaturedHeroQueue() { featuredHeroQueue = featuredProducts.map((_, index) => index).filter((index) => index !== featuredHeroIndex); for (let index = featuredHeroQueue.length - 1; index > 0; index -= 1) { const swapIndex = Math.floor(Math.random() * (index + 1)); [featuredHeroQueue[index], featuredHeroQueue[swapIndex]] = [featuredHeroQueue[swapIndex], featuredHeroQueue[index]]; } }
+function advanceFeaturedHero(direction = 1, shuffle = false) { if (featuredProducts.length < 2) return; if (shuffle) { if (!featuredHeroQueue.length) shuffleFeaturedHeroQueue(); featuredHeroIndex = featuredHeroQueue.shift(); } else { featuredHeroQueue = []; featuredHeroIndex = (featuredHeroIndex + direction + featuredProducts.length) % featuredProducts.length; } renderDynamicHero(true); }
+function renderDynamicHero(animate = false) { const product = featuredProducts[featuredHeroIndex]; const copy = $('#featuredHeroCopy'); const image = $('#featuredHeroImage'); const hero = $('#top .hero'); const controls = $('#featuredHeroControls'); if (!copy || !image) return; if (animate) { hero?.classList.remove('is-transitioning'); void hero?.offsetWidth; hero?.classList.add('is-transitioning'); } if (!product) { copy.innerHTML = '<p class="eyebrow">Featured products</p><h1 id="hero-title">Your next<br><em>favorite thing.</em></h1><p class="hero-description">Products selected by the Ground team will appear here.</p>'; image.innerHTML = '<div class="hero-empty">No featured products yet.</div>'; if (controls) controls.hidden = true; hero?.classList.remove('has-featured-products'); return; } hero?.classList.add('has-featured-products'); copy.innerHTML = `<p class="eyebrow">THE FEATURED EDIT <span class="hero-slide-count">${String(featuredHeroIndex + 1).padStart(2, '0')} / ${String(featuredProducts.length).padStart(2, '0')}</span></p><h1 id="hero-title">${escapeHtml(product.name)}</h1><p class="hero-description">${escapeHtml(product.description || 'A considered piece, selected for everyday living.')}</p><button class="hero-order-link" type="button" data-view="${escapeHtml(product.id)}">Discover this piece <span aria-hidden="true">↗</span></button>`; image.innerHTML = product.image ? `<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"><div class="hero-note"><span>CURATED FOR YOU</span><span>${escapeHtml(product.category)}</span></div>` : '<div class="hero-empty">This featured product has no image.</div>'; if (controls) { controls.hidden = featuredProducts.length < 2; const progress = controls.querySelector('.hero-carousel-progress span'); if (progress) progress.style.width = `${((featuredHeroIndex + 1) / featuredProducts.length) * 100}%`; controls.setAttribute('aria-label', `Featured product ${featuredHeroIndex + 1} of ${featuredProducts.length}`); } }
+function startFeaturedHeroCarousel() { clearInterval(featuredHeroTimer); const hero = $('#top .hero'); if (!hero || featuredProducts.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; featuredHeroTimer = setInterval(() => advanceFeaturedHero(1, true), 5600); if (!hero.dataset.carouselBound) { hero.dataset.carouselBound = 'true'; hero.addEventListener('mouseenter', () => clearInterval(featuredHeroTimer)); hero.addEventListener('mouseleave', startFeaturedHeroCarousel); hero.addEventListener('focusin', () => clearInterval(featuredHeroTimer)); hero.addEventListener('focusout', (event) => { if (!hero.contains(event.relatedTarget)) startFeaturedHeroCarousel(); }); } }
+function renderFeaturedProducts() { const container = $('#featuredProductCarousel'); if (!container) return; if (!featuredProducts.length) { container.innerHTML = '<p class="category-loading">No featured products selected by the admin yet.</p>'; return; } const visible = [...featuredProducts, ...featuredProducts].slice(featuredOffset, featuredOffset + Math.min(3, featuredProducts.length)); container.innerHTML = visible.map((product) => `<article class="top-product-card featured-card-enter" data-view="${escapeHtml(product.id)}" tabindex="0" role="button" aria-label="View ${escapeHtml(product.name)}"><img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}"><div><span>${escapeHtml(product.category)}</span><h3>${escapeHtml(product.name)}</h3><strong>${money(product.price)}</strong></div><button type="button" data-view="${escapeHtml(product.id)}" aria-label="View ${escapeHtml(product.name)}">View ↗</button></article>`).join(''); }
+function startFeaturedCarousel() { clearInterval(featuredTimer); const container = $('#featuredProductCarousel'); if (!container || featuredProducts.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; featuredTimer = setInterval(() => { featuredOffset = (featuredOffset + 1) % featuredProducts.length; renderFeaturedProducts(); }, 4200); if (!container.dataset.carouselBound) { container.dataset.carouselBound = 'true'; container.addEventListener('mouseenter', () => clearInterval(featuredTimer)); container.addEventListener('mouseleave', startFeaturedCarousel); } }
 let dynamicCategories = [];
 function renderDynamicCategories() { const uncategorizedCount = products.filter((product) => product.category === 'Uncategorized').length; const categories = [...dynamicCategories]; if (uncategorizedCount && !categories.some((category) => category.name === 'Uncategorized')) categories.push({ id: '', name: 'Uncategorized', _count: { products: uncategorizedCount } }); const button = (category) => `<button type="button" class="category-tab" data-category-id="${escapeHtml(category.id)}" data-category="${escapeHtml(category.name)}">${escapeHtml(category.name)} <small>${category._count?.products || 0}</small></button>`; const tabs = $('#categoryTabs'); if (tabs) tabs.innerHTML = `<button type="button" class="category-tab active" data-category="All">All products</button>${categories.map(button).join('')}`; const tiles = $('#categoryTiles'); if (tiles) tiles.innerHTML = categories.length ? categories.slice(0, 6).map((category) => `<button type="button" class="category-tile" data-category-id="${escapeHtml(category.id)}" data-category="${escapeHtml(category.name)}"><strong>${escapeHtml(category.name)}</strong><small>${category._count?.products || 0} products</small></button>`).join('') : '<p class="category-loading">No categories available.</p>'; decorateCategoryTiles(); bindCategoryTabs(); }
 function decorateCategoryTiles() { document.querySelectorAll('.category-tile').forEach((tile) => { const product = products.find((item) => item.categoryId === tile.dataset.categoryId || item.category === tile.dataset.category); if (product?.image) tile.style.backgroundImage = `linear-gradient(180deg, transparent 35%, rgba(32,33,29,.72)), url("${product.image.replaceAll('"', '%22')}")`; }); }
@@ -740,6 +872,32 @@ function renderProducts() {
 function renderCart() { const items = $('#cartItems'); const count = cart.reduce((sum, item) => sum + item.quantity, 0); $('#cartCount').textContent = count; $('#drawerCount').textContent = `(${count})`; if (!cart.length) { items.innerHTML = '<p class="cart-empty">Your bag is waiting for something good.<br><br>Explore the collection and add a piece that feels like you.</p>'; } else { items.innerHTML = cart.map((item) => { const stock = Number(item.stock); const atLimit = Number.isFinite(stock) && item.quantity >= stock; const itemImage = imageFor(item); return `<div class="cart-item"><img src="${escapeHtml(itemImage)}" alt="${escapeHtml(item.name)}"><div><h3>${escapeHtml(item.name)}</h3><p>${money(item.price)}</p><div class="quantity"><button data-quantity="${normalizeProductId(item.id)}" data-change="-1" aria-label="Decrease ${item.name}">−</button><span>${item.quantity}</span><button data-quantity="${normalizeProductId(item.id)}" data-change="1" aria-label="Increase ${item.name}" ${atLimit ? 'disabled' : ''}>+</button></div>${Number.isFinite(stock) ? `<small class="stock-note">${stock - item.quantity} available</small>` : ''}</div><span class="cart-item-price">${money(item.price * item.quantity)}</span></div>`; }).join(''); } $('#subtotal').textContent = money(cart.reduce((sum, item) => sum + item.price * item.quantity, 0)); }
 function renderWishlist() { const saved = products.filter((product) => wishlist.has(normalizeProductId(product.id))); $('#wishlistCount').textContent = saved.length; $('#wishlistDrawerCount').textContent = `(${saved.length})`; $('#wishlistItems').innerHTML = saved.length ? saved.map((product) => `<div class="saved-item"><img src="${imageFor(product)}" alt="${product.name}"><div><h3>${product.name}</h3><p>${money(product.price)}</p><button data-move-to-cart="${normalizeProductId(product.id)}">Move to bag <span>↗</span></button></div><button class="saved-remove" data-wish="${normalizeProductId(product.id)}" aria-label="Remove ${product.name} from wishlist">×</button></div>`).join('') : '<p class="cart-empty">Your saved pieces will appear here.<br><br>Tap the heart on anything you want to keep close.</p>'; }
 function showToast(message, icon = 'info', quiet = false) { const text = String(message ?? ''); const toast = $('#toast'); if (window.Swal && !quiet) return window.Swal.fire({ icon, title: icon === 'info' ? 'Notice' : icon.charAt(0).toUpperCase() + icon.slice(1), text, confirmButtonText: 'Continue', buttonsStyling: false, customClass: { popup: 'store-swal-popup', title: 'store-swal-title', confirmButton: 'store-swal-confirm' } }); if (!toast) return Promise.resolve(); toast.textContent = text; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2200); return Promise.resolve(); }
+document.addEventListener('change', async (event) => {
+  const input = event.target.closest('#profileImage');
+  if (!input?.files?.[0]) return;
+  event.stopImmediatePropagation();
+  const formData = new FormData();
+  formData.append('image', input.files[0]);
+  const progress = window.UploadProgressUI.open('Updating profile image', ['Preparing image', 'Uploading image', 'Updating profile']);
+  input.disabled = true;
+  try {
+    progress.setStage(0, 100, 'Profile image is ready to upload.');
+    const result = await window.UploadProgressUI.upload('http://localhost:4000/api/v1/media/avatar', formData, { Authorization: `Bearer ${authToken}` }, (percent, loaded, total) => {
+      progress.setStage(1, percent, `Uploading profile image · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+    });
+    progress.setStage(2, 20, 'Updating your account profile…');
+    const avatarUrl = result.data.avatarUrl;
+    $('#profileAvatar').innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="Profile image">`;
+    const headerAvatar = $('#accountAvatar');
+    if (headerAvatar) headerAvatar.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="">`;
+    progress.complete('Your profile image has been updated.');
+  } catch (error) {
+    input.value = '';
+    progress.fail(error instanceof Error ? error.message : 'Could not upload profile image.');
+  } finally {
+    input.disabled = false;
+  }
+}, true);
 function showClientAlert(icon, title, text) { if (window.Swal) return window.Swal.fire({ icon, title, text, confirmButtonText: 'Continue', buttonsStyling: false, customClass: { popup: 'store-swal-popup', title: 'store-swal-title', confirmButton: 'store-swal-confirm' } }); showToast(text || title, icon, true); return Promise.resolve(); }
 async function showOrderConfirmation(orderNumber) { const message = `Your order ${orderNumber} has been received. We will keep you updated here.`; if (window.Swal) { await window.Swal.fire({ icon: 'success', title: 'Order received', text: message, confirmButtonText: 'Continue', buttonsStyling: false, customClass: { popup: 'store-swal-popup', title: 'store-swal-title', confirmButton: 'store-swal-confirm' } }); return; } showToast(message); }
 function addToCart(id) { const product = products.find((item) => normalizeProductId(item.id) === normalizeProductId(id)); if (!product) return; if (!storeOpen) return showToast('The store is temporarily closed.'); const stock = Number(product.stock); if (Number.isFinite(stock) && stock <= 0) return showToast(`${product.name} is out of stock`); const normalizedId = normalizeProductId(product.id); void recordProductView(normalizedId); const existing = cart.find((item) => normalizeProductId(item.id) === normalizedId); const nextQuantity = (existing?.quantity || 0) + 1; if (Number.isFinite(stock) && nextQuantity > stock) return showToast(`Only ${stock} ${product.name} available`); if (existing) existing.quantity = nextQuantity; else cart.push({ ...product, id: normalizedId, price: Number(product.price || 0), quantity: 1 }); localStorage.removeItem(CART_CLEAR_MARKER_KEY); saveState(); renderCart(); void syncCartItem(normalizedId, nextQuantity); showToast(`${product.name} added to your bag`, 'info', true); }
@@ -906,20 +1064,19 @@ function getCheckoutPhonePattern(country) {
 }
 function applyCheckoutFieldValidation(form) {
   if (!form) return;
-  const data = new FormData(form);
-  const countryField = form.querySelector('select[name="country"]');
-  const phoneField = form.querySelector('input[name="phone"]');
-  const emailField = form.querySelector('input[name="email"]');
-  const addressField = form.querySelector('input[name="address"]');
-  const cityField = form.querySelector('input[name="city"]');
-  const gpsAddressField = form.querySelector('input[name="gpsAddress"]');
-  const country = String(data.get('country') || '').trim().toUpperCase();
+  const countryField = form.elements.namedItem('country');
+  const phoneField = form.elements.namedItem('phone');
+  const emailField = form.elements.namedItem('email');
+  const addressField = form.elements.namedItem('address');
+  const cityField = form.elements.namedItem('city');
+  const gpsAddressField = form.elements.namedItem('gpsAddress');
+  const country = String(countryField?.value || '').trim().toUpperCase();
   const pattern = getCheckoutPhonePattern(country);
   if (phoneField) {
     phoneField.pattern = pattern;
     phoneField.placeholder = country === 'GH' ? 'e.g. 0548214842 or +233 548214842' : 'e.g. +1 555 123 4567';
     phoneField.setAttribute('inputmode', 'numeric');
-    const rawPhone = String(data.get('phone') || '');
+    const rawPhone = String(phoneField.value || '');
     const cleanedPhone = rawPhone.replace(/[^\d+()\s.-]/g, '').replace(/\s+/g, ' ').trim();
     if (cleanedPhone !== rawPhone) phoneField.value = cleanedPhone;
     const normalizedPhone = cleanedPhone.replace(/[\s().-]/g, '').replace(/^\+/, '+');
@@ -932,16 +1089,16 @@ function applyCheckoutFieldValidation(form) {
     countryField.setCustomValidity(country ? '' : 'Please select a delivery country.');
   }
   if (emailField) {
-    const email = String(data.get('email') || '').trim();
+    const email = String(emailField.value || '').trim();
     const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     emailField.setCustomValidity(validEmail || !email ? '' : 'Enter a valid email address.');
   }
   if (addressField) {
-    const address = String(data.get('address') || '').trim();
+    const address = String(addressField.value || '').trim();
     addressField.setCustomValidity(address.length >= 5 ? '' : 'Please enter a full street address.');
   }
   if (cityField) {
-    const city = String(data.get('city') || '').trim();
+    const city = String(cityField.value || '').trim();
     cityField.setCustomValidity(city.length >= 2 ? '' : 'Please enter a city.');
   }
   if (gpsAddressField) gpsAddressField.setCustomValidity('');
@@ -950,6 +1107,13 @@ function validateCheckoutForm(form) {
   if (!form) return false;
   applyCheckoutFieldValidation(form);
   const activeSection = form.id === 'checkoutForm' ? form.querySelector('.checkout-step.active') : form;
+  const deliveryStepActive = form.id !== 'checkoutForm' || activeSection?.dataset.step === '2';
+  if (deliveryStepActive && form.querySelector('.checkout-address-picker') && !form.dataset.checkoutAddressId) {
+    const ui = checkoutAddressUi.get(form);
+    if (ui) setCheckoutAddressModal(form, ui.modal, ui.fields, true);
+    else showToast('Loading your address form. Please try again in a moment.');
+    return false;
+  }
   const fields = [...(activeSection || form).querySelectorAll('input, select')];
   const invalid = fields.find((field) => {
     if (field.disabled || field.type === 'hidden') return false;
@@ -968,12 +1132,12 @@ async function loadShippingQuote(form = null) {
   const deliveryOptions = activeForm?.querySelector('#deliveryOptions') || $('#deliveryOptions');
   if (deliveryOptions) deliveryOptions.innerHTML = '<span><strong>Courier-arranged delivery</strong><small>The courier team will contact you to arrange delivery and collect the delivery fee separately.</small></span><b>Quoted separately</b>';
   updateCheckout();
-  const country = String(activeForm?.querySelector('select[name="country"]')?.value || '').trim().toUpperCase();
+  const country = String(activeForm?.elements.namedItem('country')?.value || '').trim().toUpperCase();
   if (country.length >= 2) await loadTaxQuote(activeForm);
 }
 async function loadTaxQuote(form) {
   const requestId = ++taxQuoteRequestId;
-  const country = String(form?.querySelector('select[name="country"]')?.value || '').trim().toUpperCase();
+  const country = String(form?.elements.namedItem('country')?.value || '').trim().toUpperCase();
   const enabled = taxEnabled === true || taxEnabled === 'true';
   if (!enabled || country.length < 2) {
     checkoutTax = 0;
@@ -1001,88 +1165,8 @@ document.addEventListener('click', (event) => {
   if (couponInput) couponInput.value = code;
   if (form) void applyCheckoutCoupon(form, container).catch((error) => { const message = container?.querySelector('[data-coupon-message]'); if (message) { message.classList.add('error'); message.textContent = error.message; } showToast(error.message); });
 });
-document.addEventListener('click', async (event) => {
-  const addressCard = event.target.closest('[data-checkout-address-id]');
-  if (addressCard) {
-    const form = addressCard.closest('form');
-    const address = checkoutAddresses.get(form)?.find((item) => item.id === addressCard.dataset.checkoutAddressId);
-    if (!form || !address) return;
-    const ui = checkoutAddressUi.get(form);
-    if (ui) ui.fields.hidden = true;
-    applySavedAddress(form, address);
-    ui?.renderAddresses(address.id);
-    return;
-  }
-  const addAddress = event.target.closest('[data-checkout-add-address]');
-  if (addAddress) {
-    const picker = addAddress.closest('.checkout-address-picker');
-    const form = picker?.closest('form');
-    const ui = form && checkoutAddressUi.get(form);
-    if (!form || !ui) return;
-    form.dataset.checkoutAddressId = '';
-    ui.renderAddresses('');
-    ui.fields.hidden = false;
-    for (const name of ['address', 'city', 'gpsAddress', 'postal', 'country']) {
-      const field = form.elements.namedItem(name);
-      if (field) field.value = '';
-    }
-    ui.fields.querySelector('[data-checkout-address-message]').textContent = '';
-    ui.fields.querySelector('input[name="address"]')?.focus();
-    return;
-  }
-  const saveAddress = event.target.closest('[data-checkout-save-address]');
-  if (!saveAddress) return;
-  const form = saveAddress.closest('form');
-  const ui = form && checkoutAddressUi.get(form);
-  const message = ui?.fields.querySelector('[data-checkout-address-message]');
-  if (!form || !ui || !message) return;
-  const invalidField = [...ui.fields.querySelectorAll('input[required], select[required]')].find((field) => !field.disabled && !field.checkValidity());
-  if (invalidField) {
-    invalidField.reportValidity();
-    return;
-  }
-  const data = new FormData(form);
-  const recipientName = `${data.get('firstName') || ''} ${data.get('lastName') || ''}`.trim();
-  if (!recipientName || !String(data.get('phone') || '').trim()) {
-    message.textContent = 'Enter a contact name and phone number before saving this address.';
-    (form.elements.namedItem(!data.get('firstName') ? 'firstName' : 'phone'))?.focus();
-    return;
-  }
-  saveAddress.disabled = true;
-  message.textContent = 'Saving address…';
-  try {
-    const response = await fetch('http://localhost:4000/api/v1/addresses', {
-      method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({
-        fullName: recipientName,
-        phone: data.get('phone'),
-        country: data.get('country'),
-        city: data.get('city'),
-        addressLine1: data.get('address'),
-        instructions: data.get('gpsAddress'),
-        isDefault: (checkoutAddresses.get(form) || []).length === 0
-      })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.message || payload.error || 'Unable to save this address.');
-    const addresses = checkoutAddresses.get(form) || [];
-    addresses.unshift(payload.data);
-    checkoutAddresses.set(form, addresses);
-    applySavedAddress(form, payload.data);
-    ui.renderAddresses(payload.data.id);
-    ui.fields.hidden = true;
-    const count = form.querySelector('.checkout-address-count');
-    if (count) count.textContent = `${addresses.length} saved`;
-    showToast('Address saved and selected for checkout.');
-  } catch (error) {
-    message.textContent = error.message || 'Unable to save this address.';
-  } finally {
-    saveAddress.disabled = false;
-  }
-});
 document.addEventListener('change', (event) => {
-  const country = event.target.closest('#pageCheckoutForm select[name="country"]');
+  const country = event.target.matches?.('select[name="country"][form="pageCheckoutForm"]') ? event.target : event.target.closest('#pageCheckoutForm select[name="country"]');
   if (country) { void loadShippingQuote(country.form).catch((error) => showToast(error.message)); return; }
 });
 async function ensureCheckoutAddress(form) {
@@ -1207,6 +1291,7 @@ bindCategoryTabs();
 $('#sortSelect').addEventListener('change', renderProducts); $('#cartToggle').addEventListener('click', openCart); $('#cartClose').addEventListener('click', closeCart); $('#wishlistToggle').addEventListener('click', openWishlist); $('#wishlistClose').addEventListener('click', closeWishlist); $('#overlay').addEventListener('click', () => { closeCart(); closeWishlist(); closeProduct(); closeCheckout(); }); $('#checkoutButton').addEventListener('click', () => { if (cart.length) { closeCart(); navigatePage('checkout'); } else showToast('Your bag is empty'); });
 $('#featuredPrevious')?.addEventListener('click', () => { if (!featuredProducts.length) return; featuredOffset = (featuredOffset - 1 + featuredProducts.length) % featuredProducts.length; renderFeaturedProducts(); });
 $('#featuredNext')?.addEventListener('click', () => { if (!featuredProducts.length) return; featuredOffset = (featuredOffset + 1) % featuredProducts.length; renderFeaturedProducts(); });
+$('#featuredHeroControls')?.addEventListener('click', (event) => { const button = event.target.closest('[data-featured-hero-step]'); if (!button) return; advanceFeaturedHero(Number(button.dataset.featuredHeroStep)); });
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-continue-shopping]');
   if (!button) return;
@@ -1638,6 +1723,9 @@ document.addEventListener('submit', async (event) => {
   event.stopImmediatePropagation();
   form.dataset.kycSubmitInFlight = 'true';
   enhanceInternalKycForm(form);
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  const progress = window.UploadProgressUI.open('Submitting your verification', ['Preparing documents', 'Uploading documents', 'Sending for review']);
   try {
     const files = Array.from(form.elements.documents?.files || []);
     const proofOfAddress = form.elements.proofOfAddress?.files?.[0];
@@ -1653,9 +1741,10 @@ document.addEventListener('submit', async (event) => {
     upload.append('proofOfAddress', proofOfAddress);
     upload.append('selfie', selfie);
 
-    const uploadResponse = await fetch('http://localhost:4000/api/v1/media/kyc', { method: 'POST', headers: { Authorization: `Bearer ${authToken}` }, body: upload });
-    const uploadPayload = await uploadResponse.json().catch(() => ({}));
-    if (!uploadResponse.ok) throw new Error(uploadPayload.error || 'Could not upload KYC documents.');
+    progress.setStage(0, 100, 'Your verification details are ready.');
+    const uploadPayload = await window.UploadProgressUI.upload('http://localhost:4000/api/v1/media/kyc', upload, { Authorization: `Bearer ${authToken}` }, (percent, loaded, total) => {
+      progress.setStage(1, percent, `Uploading verification files · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+    });
 
     const toAbsolute = (url) => {
       if (!url) return undefined;
@@ -1687,17 +1776,22 @@ document.addEventListener('submit', async (event) => {
       selfieUrl: toAbsolute(uploadPayload.data?.selfieUrl)
     };
 
+    progress.setStage(2, null, 'Sending your verification package to the review team…');
     const result = await fetch('http://localhost:4000/api/v1/users/me/kyc', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
     const payload = await result.json().catch(() => ({}));
     if (!result.ok) throw new Error(payload.error || 'Could not submit KYC.');
 
-    await showClientAlert('success', 'KYC submitted', 'Your identity and screening package is ready for compliance review.');
+    progress.complete('Your verification package has been submitted for review.');
     await renderKycPage();
     document.querySelector('[data-profile-tab="kyc"]')?.click();
   } catch (error) {
-    await showClientAlert('error', 'KYC could not be submitted', error.message || 'Unable to submit KYC.');
+    const message = error instanceof Error ? error.message : 'Unable to submit KYC.';
+    const status = form.querySelector('#profileKycMessage');
+    if (status) status.textContent = message;
+    progress.fail(message);
   } finally {
     form.dataset.kycSubmitInFlight = 'false';
+    if (submitButton) submitButton.disabled = false;
   }
 }, true);
 document.addEventListener('click', (event) => { const story = event.target.closest('[data-journal-message]'); if (story) showToast(story.dataset.journalMessage); });

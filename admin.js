@@ -371,8 +371,55 @@ productImageInput.setAttribute('aria-label', 'Upload product images');
 const nativeAdminFetch = window.fetch.bind(window);
 window.fetch = (input, init = {}) => { const url = String(input); if (init.body && /\/api\/v1\/products(?:\/[^/]+)?$/.test(url)) { try { const payload = JSON.parse(init.body); payload.usage = productForm.elements.usage.value; payload.features = productForm.elements.features.value; payload.featured = productForm.elements.featured.checked; payload.categoryId = productForm.elements.category.selectedOptions[0]?.dataset.categoryId || undefined; init = { ...init, body: JSON.stringify(payload) }; } catch { /* Leave non-JSON requests unchanged. */ } } return nativeAdminFetch(input, init); };
 productImageInput.addEventListener('change', (event) => { selectedMedia.length = 0;[...event.target.files].slice(0, 12).forEach((file) => { const reader = new FileReader(); reader.addEventListener('load', () => { selectedMedia.push({ name: file.name, file, data: reader.result }); mediaPreview.innerHTML = selectedMedia.map((image) => `<img src="${image.data}" alt="${image.name}">`).join(''); }); reader.readAsDataURL(file); }); });
-async function uploadSelectedMedia() { if (!adminApiHeaders() || !selectedMedia.length) return []; const formData = new FormData(); selectedMedia.forEach((image) => formData.append('images', image.file, image.name)); const response = await fetch(`${API_BASE}/api/v1/media/upload`, { method: 'POST', headers: { Authorization: `Bearer ${apiToken}` }, body: formData }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || `Image upload failed (${response.status})`); return result.data.map((image) => ({ ...image, url: image.url.startsWith('http') ? image.url : `${API_BASE}${image.url}` })); }
-productForm.addEventListener('submit', async (event) => { event.preventDefault(); event.stopImmediatePropagation(); const data = new FormData(productForm); let product = { id: editingProductId || Date.now(), name: data.get('name'), category: data.get('category'), price: Number(data.get('price')), stock: Number(data.get('stock')), description: data.get('description'), usage: data.get('usage'), features: data.get('features'), image: selectedMedia[0]?.data || '', images: selectedMedia.map((image) => image.data) }; try { const uploadedImages = await uploadSelectedMedia(); const endpoint = editingProductId ? `${API_BASE}/api/v1/products/${editingProductId}` : `${API_BASE}/api/v1/products`; const payload = { name: product.name, slug: String(product.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), ...(editingProductId ? {} : { sku: `ADMIN-${Date.now()}` }), description: product.description, shortDescription: product.description, price: product.price, status: 'ACTIVE', images: uploadedImages, stock: product.stock }; if (!adminApiHeaders()) throw new Error('Sign in as an admin before saving products.'); const response = await fetch(endpoint, { method: editingProductId ? 'PATCH' : 'POST', headers: adminApiHeaders(), body: JSON.stringify(payload) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || `Could not save product (${response.status})`); const serverProduct = result.data; product = { ...product, id: serverProduct.id, image: resolveMediaUrl(serverProduct.images?.[0]?.url || uploadedImages[0]?.url || product.image), images: serverProduct.images?.map((image) => resolveMediaUrl(image.url)) || uploadedImages.map((image) => resolveMediaUrl(image.url)) }; if (editingProductId) products = products.map((entry) => String(entry.id) === String(editingProductId) ? product : entry); else products.unshift(product); localStorage.setItem('ground-admin-products', JSON.stringify(products)); renderCatalog(); closeProductModal(); productForm.reset(); selectedMedia.length = 0; mediaPreview.innerHTML = '<span>＋</span><small>Product images</small>'; editingProductId = null; showToast('Product and image gallery saved.'); } catch (error) { showToast(error.message || 'Could not save product.'); } }, true);
+async function uploadSelectedMedia(progress) {
+  if (!adminApiHeaders()) throw new Error('Sign in as an admin before saving products.');
+  if (!selectedMedia.length) {
+    progress.setStage(1, 100, 'No product images selected.');
+    return [];
+  }
+  const formData = new FormData();
+  selectedMedia.forEach((image) => formData.append('images', image.file, image.name));
+  const result = await window.UploadProgressUI.upload(`${API_BASE}/api/v1/media/upload`, formData, { Authorization: `Bearer ${apiToken}` }, (percent, loaded, total) => {
+    progress.setStage(1, percent, `Uploading product images · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+  });
+  return (result.data || []).map((image) => ({ ...image, url: image.url.startsWith('http') ? image.url : `${API_BASE}${image.url}` }));
+}
+productForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (productSubmit.disabled) return;
+  const data = new FormData(productForm);
+  let product = { id: editingProductId || Date.now(), name: data.get('name'), category: data.get('category'), price: Number(data.get('price')), stock: Number(data.get('stock')), description: data.get('description'), usage: data.get('usage'), features: data.get('features'), image: selectedMedia[0]?.data || '', images: selectedMedia.map((image) => image.data) };
+  const progress = window.UploadProgressUI.open(editingProductId ? 'Updating product' : 'Adding product', ['Preparing product details', 'Uploading product images', 'Saving product']);
+  productSubmit.disabled = true;
+  try {
+    progress.setStage(0, 100, 'Product details are ready.');
+    const uploadedImages = await uploadSelectedMedia(progress);
+    const endpoint = editingProductId ? `${API_BASE}/api/v1/products/${editingProductId}` : `${API_BASE}/api/v1/products`;
+    const payload = { name: product.name, slug: String(product.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), ...(editingProductId ? {} : { sku: `ADMIN-${Date.now()}` }), description: product.description, shortDescription: product.description, price: product.price, status: 'ACTIVE', images: uploadedImages, stock: product.stock };
+    if (!adminApiHeaders()) throw new Error('Sign in as an admin before saving products.');
+    progress.setStage(2, null, 'Saving product details to the catalog…');
+    const response = await fetch(endpoint, { method: editingProductId ? 'PATCH' : 'POST', headers: adminApiHeaders(), body: JSON.stringify(payload) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Could not save product (${response.status})`);
+    const serverProduct = result.data;
+    product = { ...product, id: serverProduct.id, image: resolveMediaUrl(serverProduct.images?.[0]?.url || uploadedImages[0]?.url || product.image), images: serverProduct.images?.map((image) => resolveMediaUrl(image.url)) || uploadedImages.map((image) => resolveMediaUrl(image.url)) };
+    if (editingProductId) products = products.map((entry) => String(entry.id) === String(editingProductId) ? product : entry);
+    else products.unshift(product);
+    localStorage.setItem('ground-admin-products', JSON.stringify(products));
+    renderCatalog();
+    closeProductModal();
+    productForm.reset();
+    selectedMedia.length = 0;
+    mediaPreview.innerHTML = '<span>＋</span><small>Product images</small>';
+    editingProductId = null;
+    progress.complete('Product and image gallery saved successfully.');
+  } catch (error) {
+    progress.fail(error instanceof Error ? error.message : 'Could not save product.');
+  } finally {
+    productSubmit.disabled = false;
+  }
+}, true);
 document.querySelector('#productSearch').addEventListener('input', (event) => renderCatalog(event.target.value));
 document.querySelector('#catalogAdd').addEventListener('click', () => openProductModal());
 document.querySelectorAll('.switch').forEach((control) => control.addEventListener('click', async () => { const next = !control.classList.contains('active'); control.classList.toggle('active', next); const key = control.id === 'storeStatus' ? 'storeStatus' : 'lowStockAlerts'; if (!adminApiHeaders()) return; const response = await fetch(`${API_BASE}/api/v1/settings`, { method: 'PATCH', headers: adminApiHeaders(), body: JSON.stringify({ [key]: next }) }); if (!response.ok) { control.classList.toggle('active', !next); showToast('Could not save setting.'); } }));
@@ -610,7 +657,30 @@ function setupLogoUploader() {
   const preview = document.createElement('div'); preview.className = 'store-logo-preview';
   const renderPreview = (src) => { preview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="Store logo preview"><span>Logo preview</span>` : '<span>No logo selected</span>'; };
   logoField.type = 'text'; logoField.name = 'storeLogoDisplay'; logoField.readOnly = true; logoField.hidden = true; logoField.removeAttribute('required'); logoField.parentElement?.append(upload, preview); logoField.parentElement?.append(hiddenLogo); renderPreview(hiddenLogo.value);
-  upload.addEventListener('change', async () => { const file = upload.files?.[0]; if (!file) return; const formData = new FormData(); formData.append('images', file); try { const response = await fetch(`${API_BASE}/api/v1/media/upload`, { method: 'POST', headers: { Authorization: adminApiHeaders()?.Authorization || '' }, body: formData }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Could not upload store logo.'); const url = result.data?.[0]?.url || ''; hiddenLogo.value = url.startsWith('http') ? url : `${API_BASE}${url}`; renderPreview(hiddenLogo.value); showToast('Store logo uploaded.'); } catch (error) { upload.value = ''; showToast(error.message); } });
+  upload.addEventListener('change', async () => {
+    const file = upload.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('images', file);
+    const progress = window.UploadProgressUI.open('Uploading store logo', ['Preparing image', 'Uploading logo', 'Updating preview']);
+    upload.disabled = true;
+    try {
+      progress.setStage(0, 100, 'Logo image is ready to upload.');
+      const result = await window.UploadProgressUI.upload(`${API_BASE}/api/v1/media/upload`, formData, { Authorization: adminApiHeaders()?.Authorization || '' }, (percent, loaded, total) => {
+        progress.setStage(1, percent, `Uploading logo · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+      });
+      const url = result.data?.[0]?.url || '';
+      hiddenLogo.value = url.startsWith('http') ? url : `${API_BASE}${url}`;
+      renderPreview(hiddenLogo.value);
+      progress.setStage(2, 100, 'Logo preview updated.');
+      progress.complete('Store logo uploaded successfully.');
+    } catch (error) {
+      upload.value = '';
+      progress.fail(error instanceof Error ? error.message : 'Could not upload store logo.');
+    } finally {
+      upload.disabled = false;
+    }
+  });
 }
 setupSettingsTabs();
 settingsForm?.querySelectorAll('input[type="color"]').forEach((input) => input.addEventListener('input', () => {
@@ -1052,7 +1122,30 @@ function renderAdminAddresses(addresses) { const list = document.querySelector('
 async function loadAdminProfile() { createAdminProfilePanel(); enhanceAdminProfilePanel(); setupAdminProfileTabs(); if (location.hash === '#adminProfile') switchView('#adminProfile'); try { const [profileResult, addressResult] = await Promise.all([adminJson('/api/v1/users/me'), adminJson('/api/v1/addresses')]); if (!profileResult) return; const user = profileResult.data; const form = document.querySelector('#adminProfileForm'); form.elements.firstName.value = user.firstName; form.elements.lastName.value = user.lastName; form.elements.email.value = user.email; document.querySelector('#adminJoinedDate').textContent = `Joined ${new Date(user.createdAt).toLocaleDateString()}`; document.querySelector('#adminProfileAvatar').innerHTML = user.avatarUrl ? `<img src="${resolveMediaUrl(user.avatarUrl)}" alt="">` : escapeHtml(user.firstName.charAt(0).toUpperCase()); renderAdminAddresses(addressResult?.data || []); const kyc = user.kycApplication; document.querySelector('#adminKycStatus').textContent = kyc?.status || 'NOT SUBMITTED'; const kycForm = document.querySelector('#adminKycForm'); if (kycForm) { kycForm.elements.documentType.value = kyc?.documentType || ''; kycForm.elements.documentNumber.value = kyc?.documentNumber || ''; kycForm.elements.notes.value = kyc?.notes || ''; if (kyc) { const previews = { documents: Array.isArray(kyc.documents) ? kyc.documents : (kyc.documentUrl ? [kyc.documentUrl] : []), proofOfAddress: kyc.proofOfAddressUrl ? [kyc.proofOfAddressUrl] : [], selfie: kyc.selfieUrl ? [kyc.selfieUrl] : [] }; Object.entries(previews).forEach(([type, urls]) => { const list = kycForm.querySelector(`[data-kyc-preview-list="${type}"]`); if (list) list.innerHTML = urls.map((url, index) => renderPersistedAdminKycPreview(url, type, index)).join(''); }); renderAdminKycReviewSummary(kycForm, kyc); } } } catch (error) { showToast(error.message, 'error'); } finally { if (location.hash === '#adminProfile') setTimeout(() => { const profile = document.querySelector('#adminProfile'); document.querySelectorAll('.admin-main > section').forEach((section) => { section.hidden = section !== profile; }); if (profile) profile.hidden = false; document.querySelectorAll('.admin-sidebar nav a').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#adminProfile')); }, 0); } }
 document.addEventListener('submit', async (event) => { if (event.target.id === 'adminProfileForm') { event.preventDefault(); const data = new FormData(event.target); const result = await adminJson('/api/v1/users/me', { method: 'PATCH', body: JSON.stringify({ firstName: data.get('firstName'), lastName: data.get('lastName') }) }); document.querySelector('#adminProfileMessage').textContent = result ? 'Profile updated.' : 'Could not update profile.'; } if (event.target.id === 'adminPasswordForm') { event.preventDefault(); const result = await adminJson('/api/v1/auth/change-password', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); document.querySelector('#adminPasswordMessage').textContent = result?.message || 'Password updated.'; event.target.reset(); } });
 document.addEventListener('submit', async (event) => { if (event.target.id === 'adminAddressForm') { event.preventDefault(); const form = event.target; const result = await adminJson('/api/v1/addresses', { method: 'POST', body: JSON.stringify({ fullName: form.elements.fullName.value, phone: form.elements.phone.value, country: form.elements.country.value, city: form.elements.city.value, addressLine1: form.elements.addressLine1.value, instructions: form.elements.instructions.value, isDefault: form.elements.isDefault.checked }) }); if (result) { document.querySelector('#adminAddressMessage').textContent = 'Address saved.'; form.reset(); const addresses = await adminJson('/api/v1/addresses'); renderAdminAddresses(addresses?.data || []); } } });
-document.addEventListener('change', async (event) => { if (event.target.id !== 'adminProfileImage') return; const file = event.target.files?.[0]; if (!file) return; const formData = new FormData(); formData.append('image', file); const response = await fetch(`${API_BASE}/api/v1/media/avatar`, { method: 'POST', headers: { Authorization: adminApiHeaders()?.Authorization || '' }, body: formData }); if (!response.ok) return showToast('Could not upload profile image.', 'error'); const result = await response.json(); document.querySelector('#adminProfileAvatar').innerHTML = `<img src="${escapeHtml(resolveMediaUrl(result.data.avatarUrl))}" alt="">`; });
+document.addEventListener('change', async (event) => {
+  const input = event.target.closest('#adminProfileImage');
+  if (!input?.files?.[0]) return;
+  event.stopImmediatePropagation();
+  const file = input.files[0];
+  const formData = new FormData();
+  formData.append('image', file);
+  const progress = window.UploadProgressUI.open('Updating profile image', ['Preparing image', 'Uploading image', 'Updating profile']);
+  input.disabled = true;
+  try {
+    progress.setStage(0, 100, 'Profile image is ready to upload.');
+    const result = await window.UploadProgressUI.upload(`${API_BASE}/api/v1/media/avatar`, formData, { Authorization: adminApiHeaders()?.Authorization || '' }, (percent, loaded, total) => {
+      progress.setStage(1, percent, `Uploading profile image · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+    });
+    progress.setStage(2, null, 'Updating your account profile…');
+    document.querySelector('#adminProfileAvatar').innerHTML = `<img src="${escapeHtml(resolveMediaUrl(result.data.avatarUrl))}" alt="">`;
+    progress.complete('Your profile image has been updated.');
+  } catch (error) {
+    input.value = '';
+    progress.fail(error instanceof Error ? error.message : 'Could not upload profile image.');
+  } finally {
+    input.disabled = false;
+  }
+}, true);
 function permissionForHash(hash) {
   if (!hash || hash === '#dashboard') return 'products.read';
   if (hash === '#orders') return 'orders.read';
@@ -1295,15 +1388,20 @@ document.addEventListener('submit', async (event) => {
   if (!form) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (form.querySelector('button[type="submit"]')?.disabled) return;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton?.disabled) return;
+  const progress = window.UploadProgressUI.open('Submitting your verification', ['Preparing documents', 'Uploading documents', 'Sending for review']);
+  if (submitButton) submitButton.disabled = true;
   try {
     const files = Array.from(form.elements.documents?.files || []);
     const proofOfAddress = form.elements.proofOfAddress?.files?.[0];
     const selfie = form.elements.selfie?.files?.[0];
     if (!files.length || !proofOfAddress || !selfie || !form.elements.ndaSigned.checked || !form.elements.acceptableUsePolicyAccepted.checked) throw new Error('Upload your ID, proof of address, selfie, and accept both compliance agreements.');
     const upload = new FormData(); files.forEach((file) => upload.append('documents', file)); upload.append('proofOfAddress', proofOfAddress); upload.append('selfie', selfie);
-    const uploadResponse = await fetch(`${API_BASE}/api/v1/media/kyc`, { method: 'POST', headers: { Authorization: `Bearer ${apiToken}` }, body: upload });
-    const uploadPayload = await uploadResponse.json().catch(() => ({})); if (!uploadResponse.ok) throw new Error(uploadPayload.error || 'Could not upload KYC documents.');
+    progress.setStage(0, 100, 'Your verification details are ready.');
+    const uploadPayload = await window.UploadProgressUI.upload(`${API_BASE}/api/v1/media/kyc`, upload, { Authorization: `Bearer ${apiToken}` }, (percent, loaded, total) => {
+      progress.setStage(1, percent, `Uploading verification files · ${Math.max(1, Math.round(loaded / 1024))} KB of ${Math.max(1, Math.round(total / 1024))} KB`);
+    });
     const absolute = (url) => url && String(url).startsWith('http') ? url : `${API_BASE}${url}`;
     const previousAddresses = String(form.elements.previousAddresses?.value || '').split('\n').map((value) => value.trim()).filter(Boolean);
     const body = {
@@ -1323,8 +1421,17 @@ document.addEventListener('submit', async (event) => {
       acceptableUsePolicyAccepted: Boolean(form.elements.acceptableUsePolicyAccepted.checked),
       notes: String(form.elements.notes?.value || '').trim() || undefined
     };
+    progress.setStage(2, null, 'Sending your verification package to the review team…');
     const result = await adminJson('/api/v1/users/me/kyc', { method: 'POST', body: JSON.stringify(body) });
     document.querySelector('#adminKycMessage').textContent = result ? 'KYC submitted for compliance review.' : 'Could not submit KYC.';
     document.querySelector('#adminKycStatus').textContent = result?.data?.status || 'PENDING';
-  } catch (error) { document.querySelector('#adminKycMessage').textContent = error.message; }
+    if (!result) throw new Error('Could not submit KYC.');
+    progress.complete('Your verification package has been submitted for review.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not submit KYC.';
+    document.querySelector('#adminKycMessage').textContent = message;
+    progress.fail(message);
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 }, true);

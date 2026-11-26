@@ -13,7 +13,8 @@
     href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="styles.css?v=20261126-checkout-address-cards-1" />
+  <link rel="stylesheet" href="styles.css?v=20261126-upload-progress-1" />
+  <link rel="stylesheet" href="upload-progress.css?v=20261126-upload-progress-1" />
   <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
 </head>
 
@@ -62,6 +63,11 @@
       <div class="hero-image-wrap" id="featuredHeroImage">
         <div class="hero-empty">Featured products will appear here when the admin selects them.</div>
       </div>
+      <nav class="featured-hero-controls" id="featuredHeroControls" aria-label="Featured products" hidden>
+        <button type="button" data-featured-hero-step="-1" aria-label="Previous featured product">←</button>
+        <span class="hero-carousel-progress" aria-hidden="true"><span></span></span>
+        <button type="button" data-featured-hero-step="1" aria-label="Next featured product">→</button>
+      </nav>
     </section>
 
     <section class="shop-section" id="catalog">
@@ -360,7 +366,8 @@
   <script src="runtime-config.js?v=20260911"></script>
   <script src="brand-theme.js?v=20261124-brand-theme-1"></script>
   <script src="invoice-pdf.bundle.js?v=20261126-invoice-2"></script>
-  <script src="app.js?v=20261126-checkout-address-cards-1"></script>
+  <script src="upload-progress.js?v=20261126-upload-progress-1"></script>
+  <script src="app.js?v=20261126-upload-progress-1"></script>
 </body>
 
 </html>
