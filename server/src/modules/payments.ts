@@ -7,7 +7,7 @@ import { requirePermission } from '../middleware/permissions';
 import { providers } from '../payments/adapters';
 
 const router = Router();
-const providerInput = z.object({ provider: z.enum(['paystack', 'hubtel', 'mpesa']), paymentId: z.string().cuid(), email: z.string().email().optional() });
+const providerInput = z.object({ provider: z.literal('paystack'), paymentId: z.string().cuid(), email: z.string().email().optional() });
 const webhookInput = z.object({ eventId: z.string().min(1), reference: z.string().min(1), status: z.enum(['SUCCESS', 'FAILED', 'PROCESSING', 'CANCELLED', 'EXPIRED']) });
 
 export function paymentInitializationErrorMessage(error: unknown, provider: string, currency: string): string {

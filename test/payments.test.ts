@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import test from 'node:test';
 import { normalizeKycSubmitBody } from '../server/src/modules/users';
 import { paymentInitializationErrorMessage } from '../server/src/modules/payments';
-import { PaystackProvider } from '../server/src/payments/adapters';
+import { PaystackProvider, providers } from '../server/src/payments/adapters';
 
 test('unsupported Paystack currency errors explain the required currency configuration', () => {
   const message = paymentInitializationErrorMessage(new Error('Paystack request failed (HTTP 403): Currency not supported by merchant'), 'paystack', 'GHS');
@@ -68,6 +68,7 @@ test('profile KYC normalization turns the public form body into the server contr
 });
 
 test('provider adapters remain isolated behind the shared contract', async () => {
+  assert.deepEqual(Object.keys(providers), ['paystack']);
   const provider = new PaystackProvider();
   const initialized = await provider.initialize({ reference: 'PAY-TEST', amount: 12, currency: 'USD', email: 'test@example.com' });
   const refunded = await provider.refund('PAY-TEST');

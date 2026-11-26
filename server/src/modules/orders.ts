@@ -12,7 +12,7 @@ const createOrderInput = z.object({
   addressId: z.string().cuid().optional(),
   shippingMethodId: z.string().min(1).max(100).optional(),
   email: z.string().email().optional(),
-  provider: z.enum(['paystack', 'hubtel', 'mpesa']).default('paystack'),
+  provider: z.literal('paystack').default('paystack'),
   currency: z.string().length(3).default('USD'),
   couponCode: z.string().trim().min(3).max(40).optional(),
   notes: z.string().max(1000).optional()
@@ -89,12 +89,19 @@ router.post('/', requireAuth, async (request, response, next) => {
       const taxEnabled = taxSetting?.value === true || taxSetting?.value === 'true';
       const tax = taxEnabled ? taxableSubtotal * taxRate / 100 : 0;
       const gatewaysSetting = await transaction.appSetting.findUnique({ where: { key: 'paymentGateways' } });
-      const configuredGateway = Array.isArray(gatewaysSetting?.value) ? gatewaysSetting.value.find((entry) => entry && typeof entry === 'object' && String((entry as { id?: string }).id).toLowerCase() === input.provider) as { serviceFee?: number } | undefined : undefined;
-      const serviceFeeRate = Number(configuredGateway?.serviceFee ?? (input.provider === 'paystack' ? 0.2 : 0));
+      const configuredGateway = Array.isArray(gatewaysSetting?.value) ? gatewaysSetting.value.find((entry) => entry && typeof entry === 'object' && String((entry as { id?: string }).id).toLowerCase() === 'paystack') as { serviceFee?: number } | undefined : undefined;
+      const serviceFeeRate = Number(configuredGateway?.serviceFee ?? 0.2);
       const serviceFee = Number(((taxableSubtotal + shipping + tax) * serviceFeeRate / 100).toFixed(2));
       const total = taxableSubtotal + shipping + tax + serviceFee;
+      if (coupon) {
+        const redemption = await transaction.coupon.updateMany({
+          where: { id: coupon.id, active: true, ...(coupon.usageLimit === null ? {} : { usedCount: { lt: coupon.usageLimit } }) },
+          data: { usedCount: { increment: 1 } }
+        });
+        if (redemption.count !== 1) throw new HttpError(409, 'Coupon usage limit reached');
+      }
       const created = await transaction.order.create({ data: { orderNumber: orderNumber(), userId: request.user!.id, addressId: input.addressId, subtotal, discount, tax, shipping, serviceFee, total, currency: input.currency.toUpperCase(), notes: input.notes, items: { create: items.map(({ product, quantity }) => ({ productId: product.id, name: product.name, sku: product.sku, unitPrice: product.price, quantity })) }, payments: { create: { provider: input.provider, reference: `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, amount: total, currency: input.currency.toUpperCase(), status: 'PENDING', metadata: input.email ? { email: input.email } : undefined } } }, include: { items: true, payments: true } });
-      if (coupon) { await transaction.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } }); await transaction.couponRedemption.create({ data: { couponId: coupon.id, userId: request.user!.id, orderId: created.id, amount: discount } }); }
+      if (coupon) await transaction.couponRedemption.create({ data: { couponId: coupon.id, userId: request.user!.id, orderId: created.id, amount: discount } });
       await transaction.notification.create({ data: { userId: request.user!.id, type: 'ORDER_PLACED', title: 'Order received', body: `Your order ${created.orderNumber} has been received.`, metadata: { orderId: created.id, orderNumber: created.orderNumber } } });
       for (const { product, quantity } of items) {
         const result = await transaction.inventory.updateMany({ where: { productId: product.id, available: { gte: quantity } }, data: { available: { decrement: quantity }, reserved: { increment: quantity } } });
@@ -113,8 +120,8 @@ router.get('/:orderNumber/receipt', requireAuth, async (request, response, next)
     if (typeof orderNumberParam !== 'string') return response.status(400).json({ error: 'Invalid order number' });
     const order = await prisma.order.findUnique({ where: { orderNumber: orderNumberParam }, include: { items: true, address: true, payments: { orderBy: { createdAt: 'desc' }, take: 1 } } });
     if (!order || (request.user!.role === 'CUSTOMER' && order.userId !== request.user!.id)) return response.status(404).json({ error: 'Order not found' });
-    const redemption = await prisma.couponRedemption.findFirst({ where: { orderId: order.id }, include: { coupon: { select: { code: true } } } });
-    return response.json({ data: { invoiceNumber: `INV-${order.orderNumber}`, orderNumber: order.orderNumber, issuedAt: order.createdAt, currency: order.currency, subtotal: Number(order.subtotal), shipping: Number(order.shipping), tax: Number(order.tax), serviceFee: Number(order.serviceFee), discount: Number(order.discount), couponCode: redemption?.coupon.code || null, total: Number(order.total), status: order.status, paymentStatus: order.paymentStatus, address: order.address, items: order.items, payment: order.payments[0] || null } });
+    const redemption = await prisma.couponRedemption.findFirst({ where: { orderId: order.id }, include: { coupon: { select: { code: true, usageLimit: true } } } });
+    return response.json({ data: { invoiceNumber: `INV-${order.orderNumber}`, orderNumber: order.orderNumber, issuedAt: order.createdAt, currency: order.currency, subtotal: Number(order.subtotal), shipping: Number(order.shipping), tax: Number(order.tax), serviceFee: Number(order.serviceFee), discount: Number(order.discount), couponCode: redemption?.coupon.usageLimit === 1 ? null : redemption?.coupon.code || null, total: Number(order.total), status: order.status, paymentStatus: order.paymentStatus, address: order.address, items: order.items, payment: order.payments[0] || null } });
   } catch (error) { return next(error); }
 });
 

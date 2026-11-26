@@ -35,8 +35,8 @@ Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`,
 - Checkout normalizes duplicate product lines, validates shipping-address ownership, and generates collision-resistant order numbers.
 - `PATCH /api/v1/orders/:orderNumber/status` lets staff/admin users update fulfillment status and records an audit event.
 - `POST /api/v1/orders/:orderNumber/cancel` cancels eligible orders and transactionally releases reserved inventory.
-- `POST /api/v1/payments/initialize` initializes a pending payment through `paystack`, `hubtel`, or `mpesa` adapters without coupling orders to one provider.
-- `POST /api/v1/payments/:provider/webhook` processes provider callbacks idempotently using a unique provider event ID.
+- `POST /api/v1/payments/initialize` initializes a pending payment through Paystack.
+- `POST /api/v1/payments/paystack/webhook` processes Paystack callbacks idempotently using a unique provider event ID.
 - `POST /api/v1/payments/:paymentId/refund` starts a provider-backed refund for staff/admin users.
 - `GET /api/v1/cart` returns the authenticated user’s cart.
 - `POST /api/v1/cart/items` adds an item after checking the server-side inventory quantity.
@@ -78,11 +78,11 @@ The admin product editor accepts up to 12 JPEG, PNG, WebP, or GIF files per prod
 
 Authentication routes are rate-limited to 20 requests per 15 minutes per IP, and payment routes are rate-limited to 60 requests per minute per IP.
 
-Payment adapter secrets are configured through `PAYSTACK_SECRET_KEY`, `HUBTEL_WEBHOOK_SECRET`, and `MPESA_WEBHOOK_SECRET`. The adapters are intentionally provider-safe in local development: they return pending/refunded states without contacting external gateways until credentials and provider HTTP clients are configured.
+Paystack is the only supported payment provider. Configure its secret with `PAYSTACK_SECRET_KEY`; without it, the adapter stays in local mode and does not contact the external gateway.
 
 Webhook callbacks must include a valid HMAC signature in `x-paystack-signature`, `x-webhook-signature`, or `x-signature`. Unsigned callbacks are rejected before payment or order state changes.
 
-When `PAYSTACK_SECRET_KEY` is present, the Paystack adapter calls Paystack’s initialize, verify, and refund endpoints. Without that secret, it stays in local adapter mode and never contacts an external payment provider.
+When `PAYSTACK_SECRET_KEY` is present, the Paystack adapter calls Paystack’s initialize, verify, and refund endpoints.
 
 The browser storefront and admin dashboard remain available through `index.html` and `admin.html`. Their current local catalog is now designed to map to the API product contract; the next frontend step is replacing local storage reads with authenticated API queries.
 
@@ -92,7 +92,7 @@ The storefront now loads public products from `GET http://localhost:4000/api/v1/
 
 Implemented foundation: typed Node/Express API, Prisma/MySQL schema, JWT authentication, bcrypt password hashing, role checks, Zod request validation, Helmet/CORS middleware, product search, inventory initialization, audit logging, Docker services, and seed data.
 
-Next modules: cart and transactional checkout, payment provider adapters/webhooks, customer accounts, returns/refunds, notifications, background jobs, and automated API tests.
+Remaining improvements: customer accounts, returns/refunds, notifications, background jobs, and automated API tests.
 
 ---
 
@@ -836,15 +836,9 @@ interface PaymentProvider {
 }
 ```
 
- The system should support providers such as:
-
- - Paystack
-- Hubtel
-- M-Pesa
-- Credit/debit cards
-- Other providers through adapters
-
- Do not tightly couple the order system to one payment provider.
+ Paystack is the only supported payment provider. Keep payment initialization,
+ verification, webhooks, and refunds isolated behind its adapter; do not expose
+ alternate gateways in checkout or admin settings.
 
 ---
 
@@ -870,42 +864,6 @@ interface PaymentProvider {
  Validate webhook signatures.
 
  Use idempotency to prevent duplicate payment processing.
-
----
-
- # 21\. HUBTEL
-
- Implement Hubtel through the same payment abstraction.
-
- Support:
-
- - Payment initialization
-- Payment verification
-- Callback/webhook processing
-- Failed transactions
-- Successful transactions
-- Transaction references
-- Refund support where available
-
- Keep Hubtel-specific implementation isolated inside the Hubtel payment adapter.
-
----
-
- # 22\. M-PESA
-
- Design M-Pesa support using a provider adapter.
-
- Support:
-
- - STK Push where applicable
-- Transaction initiation
-- Transaction status
-- Callback processing
-- Payment verification
-- Failed transactions
-- Timeout handling
-
- Never assume that an initiated transaction is successful.
 
 ---
 
@@ -2029,14 +1987,6 @@ STORAGE_SECRET_KEY
 PAYSTACK_SECRET_KEY
 PAYSTACK_PUBLIC_KEY
 
-HUBTEL_CLIENT_ID
-HUBTEL_CLIENT_SECRET
-
-MPESA_CONSUMER_KEY
-MPESA_CONSUMER_SECRET
-MPESA_SHORTCODE
-MPESA_PASSKEY
-
 EMAIL_HOST
 EMAIL_PORT
 EMAIL_USER
@@ -2054,21 +2004,12 @@ SENTRY_DSN
 
  # 61\. PAYMENT PROVIDER CONFIGURATION
 
- Payment providers should be configurable from the admin settings where appropriate.
+ Only Paystack is supported and configured from admin settings.
 
  Example:
 
 ```
 Paystack
-[Enabled]
-
-Hubtel
-[Enabled]
-
-M-Pesa
-[Enabled]
-
-Card
 [Enabled]
 ```
 
@@ -2455,20 +2396,17 @@ Contact
 
  # 81\. INTERNATIONAL PAYMENT ARCHITECTURE
 
- The payment system should make it easy to add future providers.
+ The current payment system intentionally supports Paystack only.
 
  Example:
 
 ```
 PaymentService
  ├── PaystackAdapter
- ├── HubtelAdapter
- ├── MpesaAdapter
- ├── StripeAdapter
- └── FutureProviderAdapter
 ```
 
- Each adapter must implement the common payment interface.
+ The order flow uses the common payment interface, but alternate payment
+ providers are not currently available.
 
 ---
 
@@ -2711,9 +2649,6 @@ Build
 
  - Payment abstraction
 - Paystack
-- Hubtel
-- M-Pesa
-- Card payments
 - Webhooks
 - Refunds
 
@@ -2920,14 +2855,12 @@ Configure settings
 14. Checkout.
 15. Payment abstraction.
 16. Paystack integration.
-17. Hubtel integration.
-18. M-Pesa integration.
-19. Card-payment integration.
-20. Payment webhooks.
-21. Refund system.
-22. Order management.
-23. Shipping.
-24. Tax system.
+17. Paystack card and mobile-money payment methods.
+18. Payment webhooks.
+19. Refund system.
+20. Order management.
+21. Shipping.
+22. Tax system.
 25. Coupons.
 26. Promotions.
 27. Reviews.

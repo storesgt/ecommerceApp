@@ -71,29 +71,4 @@ export class PaystackProvider extends ConfiguredProvider {
     return { providerReference: String(data.transaction || reference), status: 'REFUNDED', metadata: { refundId: data.id, status: data.status } };
   }
 }
-export class HubtelProvider extends ConfiguredProvider {
-  readonly name = 'hubtel';
-  protected signingSecret = process.env.HUBTEL_WEBHOOK_SECRET;
-  private clientId = process.env.HUBTEL_CLIENT_ID;
-  private clientSecret = process.env.HUBTEL_CLIENT_SECRET;
-  private merchantAccount = process.env.HUBTEL_MERCHANT_ACCOUNT;
-  private apiUrl = process.env.HUBTEL_API_URL || 'https://api-txn.hubtel.com';
-
-  configure(settings: { clientId?: string; clientSecret?: string; merchantAccount?: string; apiUrl?: string; webhookSecret?: string }) { this.clientId = settings.clientId || process.env.HUBTEL_CLIENT_ID; this.clientSecret = settings.clientSecret || process.env.HUBTEL_CLIENT_SECRET; this.merchantAccount = settings.merchantAccount || process.env.HUBTEL_MERCHANT_ACCOUNT; this.apiUrl = settings.apiUrl || process.env.HUBTEL_API_URL || 'https://api-txn.hubtel.com'; this.signingSecret = settings.webhookSecret || process.env.HUBTEL_WEBHOOK_SECRET; }
-
-  async initialize(request: PaymentRequest): Promise<ProviderResult> {
-    const clientId = this.clientId;
-    const clientSecret = this.clientSecret;
-    const merchantAccount = this.merchantAccount;
-    if (!clientId || !clientSecret || !merchantAccount) return super.initialize(request);
-    const baseUrl = this.apiUrl;
-    const metadata = request.metadata || {};
-    const response = await fetch(`${baseUrl}/v1/merchantaccount/merchants/${encodeURIComponent(merchantAccount)}/receive/mobilemoney`, { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ CustomerName: metadata.customerName || request.email, CustomerMsisdn: metadata.phone || '', Channel: metadata.channel || 'momo', Amount: request.amount, PrimaryCallbackUrl: process.env.HUBTEL_CALLBACK_URL, Description: `Ground order ${request.reference}`, ClientReference: request.reference }) });
-    const payload = await response.json() as Record<string, unknown>;
-    if (!response.ok) throw new Error(String(payload.Message || payload.message || 'Hubtel payment initialization failed'));
-    return { providerReference: String(payload.TransactionId || payload.transactionId || request.reference), redirectUrl: typeof payload.CheckoutUrl === 'string' ? payload.CheckoutUrl : undefined, status: 'PENDING', metadata: { provider: 'hubtel', response: payload } };
-  }
-}
-export class MpesaProvider extends ConfiguredProvider { readonly name = 'mpesa'; protected signingSecret = process.env.MPESA_WEBHOOK_SECRET; configure(settings: { webhookSecret?: string }) { this.signingSecret = settings.webhookSecret || process.env.MPESA_WEBHOOK_SECRET; } }
-
-export const providers: Record<string, PaymentProvider> = { paystack: new PaystackProvider(), hubtel: new HubtelProvider(), mpesa: new MpesaProvider() };
+export const providers: Record<string, PaymentProvider> = { paystack: new PaystackProvider() };

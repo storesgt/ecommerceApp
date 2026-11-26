@@ -348,7 +348,7 @@ async function sweetInput(title, inputLabel, inputValue = '') { if (!window.Swal
 async function editCoupon(coupon = null) {
   if (!window.Swal) { showToast('Coupon dialog could not be opened.', 'error'); return; }
   const editing = Boolean(coupon?.id);
-  const values = coupon || { code: '', type: 'PERCENTAGE', value: '', minimumOrder: '', maximumDiscount: '', expiresAt: '', published: false, active: true };
+  const values = coupon || { code: '', type: 'PERCENTAGE', value: '', minimumOrder: '', maximumDiscount: '', usageLimit: '', expiresAt: '', published: false, active: true };
   const result = await window.Swal.fire({
     title: editing ? 'Edit coupon' : 'Create coupon',
     html: `<div class="swal-form-grid">
@@ -357,10 +357,25 @@ async function editCoupon(coupon = null) {
       <label class="swal-field">Value<input id="swalCouponValue" type="number" min="0" step="0.01" value="${values.value === '' || values.value === undefined || values.value === null ? '' : Number(values.value)}"></label>
       <label class="swal-field">Minimum order<input id="swalCouponMinimum" type="number" min="0" step="0.01" value="${values.minimumOrder ?? ''}"></label>
       <label class="swal-field">Maximum discount<input id="swalCouponMaximum" type="number" min="0" step="0.01" value="${values.maximumDiscount ?? ''}"></label>
+      <label class="swal-field">Maximum total uses<input id="swalCouponUsageLimit" type="number" min="1" step="1" value="${values.usageLimit ?? ''}"><small>Leave blank for unlimited. Set to 1 for a one-time code that is revealed only after creation.</small></label>
       <label class="swal-field swal-field-wide">Expiration date<input id="swalCouponExpiry" type="date" value="${values.expiresAt ? new Date(values.expiresAt).toISOString().slice(0, 10) : ''}"><small>Leave blank for no expiration.</small></label>
       <label class="swal-field swal-field-wide" style="display:flex;gap:10px;align-items:flex-start;"><input id="swalCouponPublished" type="checkbox" ${values.published ? 'checked' : ''} style="width:auto;margin-top:4px;"><span><strong style="display:block;font-size:13px;">Publish to customers</strong><small>Show this coupon on the client page while it is active and valid.</small></span></label>
     </div>`,
-    didOpen: () => { const type = document.querySelector('#swalCouponType'); if (type) type.value = values.type || 'PERCENTAGE'; },
+    didOpen: () => {
+      const type = document.querySelector('#swalCouponType');
+      if (type) type.value = values.type || 'PERCENTAGE';
+      const usageLimit = document.querySelector('#swalCouponUsageLimit');
+      const published = document.querySelector('#swalCouponPublished');
+      const syncOneTimeState = () => {
+        const oneTime = Number(usageLimit?.value) === 1;
+        if (published) {
+          published.disabled = oneTime;
+          if (oneTime) published.checked = false;
+        }
+      };
+      usageLimit?.addEventListener('input', syncOneTimeState);
+      syncOneTimeState();
+    },
     showCancelButton: true,
     confirmButtonText: editing ? 'Save changes' : 'Create coupon',
     cancelButtonText: 'Cancel',
@@ -373,25 +388,39 @@ async function editCoupon(coupon = null) {
       const value = rawValue === '' ? 0 : Number(rawValue);
       const minRaw = String(document.querySelector('#swalCouponMinimum')?.value ?? '').trim();
       const maxRaw = String(document.querySelector('#swalCouponMaximum')?.value ?? '').trim();
+      const usageLimitRaw = String(document.querySelector('#swalCouponUsageLimit')?.value ?? '').trim();
       const expiryRaw = String(document.querySelector('#swalCouponExpiry')?.value ?? '').trim();
       if (!code || !/^[A-Z0-9_-]+$/.test(code)) { window.Swal.showValidationMessage('Enter a valid coupon code using letters, numbers, _ or -.'); return null; }
       if (!Number.isFinite(value) || value < 0 || (type === 'PERCENTAGE' && value > 100)) { window.Swal.showValidationMessage('Enter a valid discount value.'); return null; }
+      const usageLimit = usageLimitRaw === '' ? undefined : Number(usageLimitRaw);
+      if (usageLimit !== undefined && (!Number.isInteger(usageLimit) || usageLimit < 1)) { window.Swal.showValidationMessage('Enter a whole-number usage limit of at least 1.'); return null; }
+      if (editing && usageLimit === 1 && values.usageLimit !== 1) { window.Swal.showValidationMessage('Create a new one-time coupon to reveal its code once.'); return null; }
       return {
         code,
         type,
         value,
         minimumOrder: minRaw === '' ? undefined : Number(minRaw),
         maximumDiscount: maxRaw === '' ? undefined : Number(maxRaw),
+        usageLimit,
         expiresAt: expiryRaw === '' ? undefined : expiryRaw,
         active: true,
-        published: Boolean(document.querySelector('#swalCouponPublished')?.checked)
+        published: usageLimit === 1 ? false : Boolean(document.querySelector('#swalCouponPublished')?.checked)
       };
     }
   });
   if (!result.isConfirmed || !result.value) return;
   try {
-    await adminJson(editing ? `/api/v1/coupons/${coupon.id}` : '/api/v1/coupons', { method: editing ? 'PATCH' : 'POST', body: JSON.stringify(result.value) });
+    const saved = await adminJson(editing ? `/api/v1/coupons/${coupon.id}` : '/api/v1/coupons', { method: editing ? 'PATCH' : 'POST', body: JSON.stringify(result.value) });
     await loadCoupons();
+    if (!editing && saved?.data?.usageLimit === 1) {
+      await window.Swal.fire({
+        title: 'One-time coupon code',
+        html: `<p>Copy and share this code now. It will not be shown again.</p><code class="one-time-coupon-code">${escapeHtml(saved.data.code)}</code>`,
+        confirmButtonText: 'Done',
+        buttonsStyling: false,
+        customClass: { popup: 'admin-swal-popup', confirmButton: 'admin-swal-confirm' }
+      });
+    }
     showToast(editing ? 'Coupon updated.' : 'Coupon created.');
   } catch (error) {
     console.error('Coupon save failed', error);
@@ -441,8 +470,12 @@ async function loadCoupons() {
       const status = expired ? 'Expired' : coupon.active ? 'Active' : 'Inactive';
       const statusClass = expired ? 'list-expired' : coupon.active ? 'list-active' : '';
       const countdown = coupon.active && expiry > now ? `<span class="coupon-countdown" data-coupon-expires="${expiry}">Expires in ${formatCouponCountdown(expiry - now)}</span>` : '';
-      const published = Boolean(coupon.published) && !expired && coupon.active;
-      return `<div class="admin-list-row ${expired ? 'coupon-expired' : ''}"><span><strong>${escapeHtml(coupon.code)}</strong><small>${escapeHtml(coupon.type.replaceAll('_', ' '))} · ${coupon.value}${coupon.type === 'PERCENTAGE' ? '%' : ''}${coupon.expiresAt ? ` · expires ${new Date(coupon.expiresAt).toLocaleDateString()}` : ''}${published ? ' · <b class="list-active">Published</b>' : ''}${countdown ? ` ${countdown}` : ''}</small></span><span class="list-actions"><b class="${statusClass}">${status}</b>${canManage ? `<button type="button" class="icon-action" data-publish-coupon="${coupon.id}" data-published="${published ? 'true' : 'false'}" aria-label="${published ? 'Unpublish' : 'Publish'} ${escapeHtml(coupon.code)}" title="${published ? 'Unpublish from client page' : 'Publish to client page'}" ${expired || !coupon.active ? 'disabled' : ''}>${published ? '◉' : '○'}</button><button type="button" class="icon-action" data-edit-coupon="${coupon.id}" aria-label="Edit ${escapeHtml(coupon.code)}" title="Edit coupon" ${expired ? 'disabled' : ''}>✎</button><button type="button" class="icon-action" data-delete-coupon="${coupon.id}" aria-label="Delete ${escapeHtml(coupon.code)}" title="Delete coupon" ${expired ? 'disabled' : ''}>×</button>` : ''}</span></div>`;
+      const singleUse = coupon.usageLimit === 1;
+      const published = !singleUse && Boolean(coupon.published) && !expired && coupon.active;
+      const codeLabel = singleUse ? 'One-time code · revealed once' : escapeHtml(coupon.code || '');
+      const usageLabel = coupon.usageLimit === null ? '' : ` · ${coupon.usedCount || 0}/${coupon.usageLimit} uses`;
+      const manageActions = !canManage ? '' : `${singleUse ? '' : `<button type="button" class="icon-action" data-publish-coupon="${coupon.id}" data-published="${published ? 'true' : 'false'}" aria-label="${published ? 'Unpublish' : 'Publish'} ${escapeHtml(coupon.code)}" title="${published ? 'Unpublish from client page' : 'Publish to client page'}" ${expired || !coupon.active ? 'disabled' : ''}>${published ? '◉' : '○'}</button><button type="button" class="icon-action" data-edit-coupon="${coupon.id}" aria-label="Edit ${escapeHtml(coupon.code)}" title="Edit coupon" ${expired ? 'disabled' : ''}>✎</button>`}<button type="button" class="icon-action" data-delete-coupon="${coupon.id}" aria-label="${singleUse ? 'Archive one-time coupon' : `Archive ${escapeHtml(coupon.code)}`}" title="Archive coupon">×</button>`;
+      return `<div class="admin-list-row ${expired ? 'coupon-expired' : ''}"><span><strong>${codeLabel}</strong><small>${escapeHtml(coupon.type.replaceAll('_', ' '))} · ${coupon.value}${coupon.type === 'PERCENTAGE' ? '%' : ''}${usageLabel}${coupon.expiresAt ? ` · expires ${new Date(coupon.expiresAt).toLocaleDateString()}` : ''}${published ? ' · <b class="list-active">Published</b>' : ''}${countdown ? ` ${countdown}` : ''}</small></span><span class="list-actions"><b class="${statusClass}">${status}</b>${manageActions}</span></div>`;
     }).join('') : '<p class="table-empty">No coupons created yet.</p>';
     if (coupons.some((coupon) => coupon.active && coupon.expiresAt && new Date(coupon.expiresAt).getTime() > now)) couponCountdownTimer = setInterval(updateCouponCountdowns, 1000);
   } catch (error) { showToast(error.message, 'error'); }
@@ -495,7 +528,7 @@ function setupSettingsTabs() {
     countries: document.createElement('div')
   };
   Object.entries(panels).forEach(([name, panel]) => { panel.className = `settings-tab-panel settings-tab-panel-${name}`; panel.dataset.settingsPanel = name; panel.hidden = name !== 'branding'; });
-  const definitions = [['branding', 'Branding', 'fa-palette'], ['payment', 'Payment gateways', 'fa-credit-card'], ['countries', 'Countries supported', 'fa-earth-americas']];
+  const definitions = [['branding', 'Branding', 'fa-palette'], ['payment', 'Paystack', 'fa-credit-card'], ['countries', 'Countries supported', 'fa-earth-americas']];
   definitions.forEach(([name, label, icon], index) => { const button = document.createElement('button'); button.type = 'button'; button.className = `settings-tab${index === 0 ? ' active' : ''}`; button.setAttribute('role', 'tab'); button.setAttribute('aria-selected', index === 0 ? 'true' : 'false'); button.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i><span>${label}</span>`; button.addEventListener('click', () => { definitions.forEach(([tabName]) => { const tab = tabBar.querySelector(`[data-settings-tab="${tabName}"]`); const panel = panels[tabName]; tab?.classList.toggle('active', tabName === name); tab?.setAttribute('aria-selected', tabName === name ? 'true' : 'false'); panel.hidden = tabName !== name; }); }); button.dataset.settingsTab = name; tabBar.appendChild(button); });
   const saveButton = settingsForm.querySelector('.primary-button[type="submit"]');
   if (saveButton && !saveButton.querySelector('i')) saveButton.insertAdjacentHTML('afterbegin', '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>');
@@ -538,13 +571,11 @@ const legacyPaystackSecret = settingsForm?.querySelector('[name="paystackSecretK
 [legacyPaymentProvider, legacyPaystackPublic, legacyPaystackSecret].forEach((field) => field?.closest('.admin-field-grid')?.remove());
 const legacyTaxFields = document.querySelector('#taxRateFields');
 legacyTaxFields?.remove();
-const gatewayList = document.querySelector('#paymentGatewayList') || (() => { const wrapper = document.createElement('div'); wrapper.className = 'payment-gateways-settings'; wrapper.innerHTML = '<div class="panel-label"><span>Payment gateways</span><button class="ghost-button" id="addPaymentGateway" type="button">＋ Add gateway</button></div><div id="paymentGatewayList"></div>'; paymentPanel?.prepend(wrapper); return wrapper.querySelector('#paymentGatewayList'); })();
-const gatewayDefaults = [{ id: 'paystack', name: 'Paystack', enabled: true }, { id: 'hubtel', name: 'Hubtel', enabled: false }, { id: 'mpesa', name: 'M-Pesa', enabled: false }];
-function gatewayFields(gateway) { const common = `<label>Gateway name<input name="gatewayName" value="${escapeHtml(gateway.name || '')}" required></label><label>Gateway ID<input name="gatewayId" value="${escapeHtml(gateway.id || '')}" required maxlength="40"></label><label>Service fee (%)<input name="gatewayServiceFee" type="number" min="0" max="100" step="0.01" value="${Number(gateway.serviceFee ?? (gateway.id === 'paystack' ? 0.2 : 0))}"><small>Added to checkout totals when this gateway is selected.</small></label><label class="check-row"><input name="gatewayEnabled" type="checkbox" ${gateway.enabled ? 'checked' : ''}> Enabled for checkout</label>`; const fields = gateway.id === 'paystack' ? '<label>Public key<input name="gatewayPublicKey" placeholder="pk_test_..."></label><label>Secret key<input name="gatewaySecretKey" type="password" placeholder="sk_test_..."></label><label>Callback URL<input name="gatewayCallbackUrl" placeholder="https://..."></label><label>Webhook secret<input name="gatewayWebhookSecret" type="password"></label>' : '<label>Client ID<input name="gatewayClientId"></label><label>Client secret<input name="gatewayClientSecret" type="password"></label><label>Merchant account<input name="gatewayMerchantAccount"></label><label>API URL<input name="gatewayApiUrl" placeholder="https://..."></label><label>Callback URL<input name="gatewayCallbackUrl" placeholder="https://..."></label><label>Webhook secret<input name="gatewayWebhookSecret" type="password"></label>'; return `<div class="payment-gateway-row" data-payment-gateway><div class="admin-field-grid">${common}${fields}</div><button class="ghost-button gateway-remove" type="button" data-remove-gateway>Remove gateway</button></div>`; }
-function renderPaymentGateways(gateways = gatewayDefaults) { if (!gatewayList) return; gatewayList.innerHTML = gateways.map(gatewayFields).join(''); gateways.forEach((gateway, index) => { const row = gatewayList.children[index]; if (!row) return; const set = (name, value) => { const field = row.querySelector(`[name="${name}"]`); if (field && value !== undefined) field.value = value; }; set('gatewayServiceFee', gateway.serviceFee ?? (gateway.id === 'paystack' ? 0.2 : 0)); set('gatewayPublicKey', gateway.publicKey); set('gatewaySecretKey', gateway.secretKey); set('gatewayClientId', gateway.clientId); set('gatewayClientSecret', gateway.clientSecret); set('gatewayMerchantAccount', gateway.merchantAccount); set('gatewayApiUrl', gateway.apiUrl); set('gatewayCallbackUrl', gateway.callbackUrl); set('gatewayWebhookSecret', gateway.webhookSecret); }); }
+const gatewayList = document.querySelector('#paymentGatewayList') || (() => { const wrapper = document.createElement('div'); wrapper.className = 'payment-gateways-settings'; wrapper.innerHTML = '<div class="panel-label"><span>Paystack payment settings</span></div><div id="paymentGatewayList"></div>'; paymentPanel?.prepend(wrapper); return wrapper.querySelector('#paymentGatewayList'); })();
+const gatewayDefaults = [{ id: 'paystack', name: 'Paystack', enabled: true, serviceFee: 0.2 }];
+function gatewayFields(gateway) { return `<div class="payment-gateway-row" data-payment-gateway><div class="admin-field-grid"><label>Paystack service fee (%)<input name="gatewayServiceFee" type="number" min="0" max="100" step="0.01" value="${Number(gateway.serviceFee ?? 0.2)}"><small>Added to checkout totals.</small></label><label>Public key<input name="gatewayPublicKey" placeholder="pk_test_..."></label><label>Secret key<input name="gatewaySecretKey" type="password" placeholder="sk_test_..."></label></div></div>`; }
+function renderPaymentGateways(gateways = gatewayDefaults) { if (!gatewayList) return; const gateway = gateways.find((entry) => entry.id === 'paystack') || gatewayDefaults[0]; gatewayList.innerHTML = gatewayFields(gateway); const row = gatewayList.firstElementChild; const publicKey = row?.querySelector('[name="gatewayPublicKey"]'); const secretKey = row?.querySelector('[name="gatewaySecretKey"]'); if (publicKey) publicKey.value = gateway.publicKey || ''; if (secretKey) secretKey.value = gateway.secretKey || ''; }
 renderPaymentGateways();
-document.querySelector('#addPaymentGateway')?.addEventListener('click', () => { const gateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({ id: row.querySelector('[name="gatewayId"]')?.value || '', name: row.querySelector('[name="gatewayName"]')?.value || '', serviceFee: Number(row.querySelector('[name="gatewayServiceFee"]')?.value || 0), enabled: row.querySelector('[name="gatewayEnabled"]')?.checked })); gateways.push({ id: 'custom-gateway', name: 'Custom gateway', serviceFee: 0, enabled: false }); renderPaymentGateways(gateways); });
-gatewayList?.addEventListener('click', (event) => { if (event.target.closest('[data-remove-gateway]')) event.target.closest('[data-payment-gateway]')?.remove(); });
 function renderTaxCountries(countries = defaultTaxCountries) { if (!taxCountryList) return; taxCountryList.innerHTML = (countries.length ? countries : defaultTaxCountries).map((country) => `<div class="tax-country-row" data-tax-country-row><label>Country code<input name="taxCountryCode" maxlength="3" value="${escapeHtml(country.code || '')}" required></label><label>Country name<input name="taxCountryName" value="${escapeHtml(country.name || '')}" required></label><label>Tax rate (%)<input name="taxCountryRate" type="number" min="0" max="100" step="0.01" value="${Number(country.rate || 0)}" required></label><button class="ghost-button tax-country-remove" type="button" data-remove-tax-country aria-label="Remove ${escapeHtml(country.name || 'country')}" title="Remove country" ${countries.length <= 1 ? 'hidden' : ''}>⌫</button></div>`).join(''); }
 const syncTaxRateVisibility = () => { if (taxRateFields) taxRateFields.hidden = !taxEnabledInput?.checked; };
 taxEnabledInput?.addEventListener('change', syncTaxRateVisibility);
@@ -562,20 +593,14 @@ settingsForm.addEventListener('submit', async (event) => {
     rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0),
   })).filter((country) => country.code && country.name);
   const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({
-    id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(),
-    name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(),
+    id: 'paystack',
+    name: 'Paystack',
     serviceFee: Number(row.querySelector('[name="gatewayServiceFee"]')?.value || 0),
-    enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked),
+    enabled: true,
     publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '',
     secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '',
-    clientId: row.querySelector('[name="gatewayClientId"]')?.value || '',
-    clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '',
-    merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '',
-    apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '',
-    callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '',
-    webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '',
-  })).filter((gateway) => gateway.id && gateway.name);
-  const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0];
+  }));
+  const activeGateway = paymentGateways[0];
   const smtpPassword = String(data.get('smtpPassword') || '');
   const clearSmtpPassword = data.get('clearSmtpPassword') === 'on';
   const payload = {
@@ -642,8 +667,6 @@ document.querySelector('#testSmtpConnection')?.addEventListener('click', async (
     button.disabled = false;
   }
 });
-settingsForm.addEventListener('submit', async (event) => { event.preventDefault(); event.stopImmediatePropagation(); const data = new FormData(event.target); const taxCountries = [...document.querySelectorAll('[data-tax-country-row]')].map((row) => ({ code: String(row.querySelector('[name="taxCountryCode"]')?.value || '').trim().toUpperCase(), name: String(row.querySelector('[name="taxCountryName"]')?.value || '').trim(), rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0) })).filter((country) => country.code && country.name); const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({ id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(), name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(), serviceFee: Number(row.querySelector('[name="gatewayServiceFee"]')?.value || 0), enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked), publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '', secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '', clientId: row.querySelector('[name="gatewayClientId"]')?.value || '', clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '', merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '', apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '', callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '', webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '' })).filter((gateway) => gateway.id && gateway.name); const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0]; try { await adminJson('/api/v1/settings', { method: 'PATCH', body: JSON.stringify({ storeName: data.get('storeName'), storeLogo: data.get('storeLogo') || '', brandPrimaryColor: data.get('brandPrimaryColor'), brandAccentColor: data.get('brandAccentColor'), supportEmail: data.get('supportEmail') || undefined, supportWhatsApp: String(data.get('supportWhatsApp') || '').trim() || undefined, defaultCurrency: data.get('defaultCurrency'), paymentProvider: activeGateway?.id || 'paystack', paymentGateways, paystackPublicKey: activeGateway?.id === 'paystack' ? activeGateway.publicKey : '', paystackSecretKey: activeGateway?.id === 'paystack' ? activeGateway.secretKey : '', defaultShippingRate: data.get('defaultShippingRate'), freeShippingThreshold: data.get('freeShippingThreshold'), lowStockThreshold: data.get('lowStockThreshold'), taxEnabled: data.get('taxEnabled') === 'on', taxCountries }) }); await loadAdminBranding(); showToast('Settings saved.'); await loadFullSettings(); } catch (error) { showToast(error.message); } }, true);
-document.querySelector('#settingsForm').addEventListener('submit', async (event) => { event.preventDefault(); const data = new FormData(event.target); const taxCountries = [...document.querySelectorAll('[data-tax-country-row]')].map((row) => ({ code: String(row.querySelector('[name="taxCountryCode"]')?.value || '').trim().toUpperCase(), name: String(row.querySelector('[name="taxCountryName"]')?.value || '').trim(), rate: Number(row.querySelector('[name="taxCountryRate"]')?.value || 0) })).filter((country) => country.code && country.name); const paymentGateways = [...document.querySelectorAll('[data-payment-gateway]')].map((row) => ({ id: String(row.querySelector('[name="gatewayId"]')?.value || '').trim().toLowerCase(), name: String(row.querySelector('[name="gatewayName"]')?.value || '').trim(), enabled: Boolean(row.querySelector('[name="gatewayEnabled"]')?.checked), publicKey: row.querySelector('[name="gatewayPublicKey"]')?.value || '', secretKey: row.querySelector('[name="gatewaySecretKey"]')?.value || '', clientId: row.querySelector('[name="gatewayClientId"]')?.value || '', clientSecret: row.querySelector('[name="gatewayClientSecret"]')?.value || '', merchantAccount: row.querySelector('[name="gatewayMerchantAccount"]')?.value || '', apiUrl: row.querySelector('[name="gatewayApiUrl"]')?.value || '', callbackUrl: row.querySelector('[name="gatewayCallbackUrl"]')?.value || '', webhookSecret: row.querySelector('[name="gatewayWebhookSecret"]')?.value || '' })).filter((gateway) => gateway.id && gateway.name); const activeGateway = paymentGateways.find((gateway) => gateway.enabled) || paymentGateways[0]; try { await adminJson('/api/v1/settings', { method: 'PATCH', body: JSON.stringify({ storeName: data.get('storeName'), storeLogo: data.get('storeLogo') || '', supportEmail: data.get('supportEmail') || undefined, supportWhatsApp: String(data.get('supportWhatsApp') || '').trim() || undefined, defaultCurrency: data.get('defaultCurrency'), paymentProvider: activeGateway?.id || 'paystack', paymentGateways, paystackPublicKey: activeGateway?.id === 'paystack' ? activeGateway.publicKey : '', paystackSecretKey: activeGateway?.id === 'paystack' ? activeGateway.secretKey : '', defaultShippingRate: data.get('defaultShippingRate'), freeShippingThreshold: data.get('freeShippingThreshold'), lowStockThreshold: data.get('lowStockThreshold'), taxEnabled: data.get('taxEnabled') === 'on', taxCountries }) }); await loadAdminBranding(); showToast('Settings saved.'); await loadFullSettings(); } catch (error) { showToast(error.message); } });
 document.querySelector('.settings-detail-link').addEventListener('click', (event) => { event.preventDefault(); switchView('#settingsDetails'); document.querySelector("a[href='#settings']").classList.add('active'); });
 document.querySelector('#toggleAdminPassword').addEventListener('click', (event) => { const input = adminLoginForm.elements.password; const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; event.currentTarget.textContent = visible ? 'Show' : 'Hide'; event.currentTarget.setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); });
 document.querySelector('#adminExitToStore').addEventListener('click', () => { window.location.href = 'index.html'; });

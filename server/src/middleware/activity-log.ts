@@ -3,11 +3,11 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 
 const mutatingMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const sensitiveKeys = new Set(['password', 'passwordHash', 'secretKey', 'clientSecret', 'webhookSecret', 'token', 'authorization']);
+const sensitiveKeys = new Set(['password', 'passwordHash', 'secretKey', 'clientSecret', 'webhookSecret', 'token', 'authorization', 'couponCode']);
 
-function safeBody(body: unknown) {
+export function safeBody(body: unknown, redactCode = false) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
-  return Object.fromEntries(Object.entries(body as Record<string, unknown>).map(([key, value]) => [key, sensitiveKeys.has(key) ? '[REDACTED]' : Array.isArray(value) ? `[${value.length} items]` : typeof value === 'object' && value !== null ? '[object]' : value]));
+  return Object.fromEntries(Object.entries(body as Record<string, unknown>).map(([key, value]) => [key, sensitiveKeys.has(key) || (redactCode && key === 'code') ? '[REDACTED]' : Array.isArray(value) ? `[${value.length} items]` : typeof value === 'object' && value !== null ? '[object]' : value]));
 }
 
 export function recordActivity(request: Request, response: Response, next: NextFunction) {
@@ -16,7 +16,7 @@ export function recordActivity(request: Request, response: Response, next: NextF
     const actor = request.user;
     if (!actor) return;
     const path = request.path.replace(/\/[a-z0-9]{20,}/gi, '/:id').replace(/\/[A-Z0-9_-]{8,}/g, '/:reference');
-    const metadata = JSON.parse(JSON.stringify({ path, method: request.method, statusCode: response.statusCode, body: safeBody(request.body) })) as Prisma.InputJsonValue;
+    const metadata = JSON.parse(JSON.stringify({ path, method: request.method, statusCode: response.statusCode, body: safeBody(request.body, request.path.startsWith('/api/v1/coupons')) })) as Prisma.InputJsonValue;
     void prisma.auditLog.create({ data: { userId: actor.id, action: `API_${request.method}`, entity: path.split('/')[3] || 'API', entityId: null, metadata } }).catch((error) => console.error('Activity audit write failed:', error));
   });
   next();

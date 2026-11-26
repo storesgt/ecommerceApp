@@ -9,11 +9,19 @@ const createInput = z.object({ code: z.string().min(3).max(40).regex(/^[A-Za-z0-
 const validateInput = z.object({ code: z.string().min(3), subtotal: z.coerce.number().nonnegative(), shipping: z.coerce.number().nonnegative().default(0) });
 const endOfExpiryDay = (value?: Date) => { if (!value) return value; const expiry = new Date(value); expiry.setHours(23, 59, 59, 999); return expiry; };
 
+export function redactSingleUseCoupon<T extends { code: string; usageLimit: number | null }>(coupon: T) {
+  return coupon.usageLimit === 1 ? { ...coupon, code: null } : coupon;
+}
+
+export function isPublicCoupon(coupon: { usageLimit: number | null; usedCount: number }) {
+  return coupon.usageLimit !== 1 && (coupon.usageLimit === null || coupon.usedCount < coupon.usageLimit);
+}
+
 router.post('/', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => {
-  try { const input = createInput.parse(request.body); if (input.type === 'PERCENTAGE' && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' }); const coupon = await prisma.coupon.create({ data: { ...input, expiresAt: endOfExpiryDay(input.expiresAt), code: input.code.toUpperCase() } }); return response.status(201).json({ data: coupon }); } catch (error) { return next(error); }
+  try { const input = createInput.parse(request.body); if (input.type === 'PERCENTAGE' && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' }); const coupon = await prisma.coupon.create({ data: { ...input, published: input.usageLimit === 1 ? false : input.published, expiresAt: endOfExpiryDay(input.expiresAt), code: input.code.toUpperCase() } }); return response.status(201).json({ data: coupon }); } catch (error) { return next(error); }
 });
 
-router.get('/', requireAuth, requirePermission('coupons.read'), async (_request, response, next) => { try { return response.json({ data: await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } }) }); } catch (error) { return next(error); } });
+router.get('/', requireAuth, requirePermission('coupons.read'), async (_request, response, next) => { try { const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } }); return response.json({ data: coupons.map(redactSingleUseCoupon) }); } catch (error) { return next(error); } });
 
 router.get('/public', async (_request, response, next) => {
   try {
@@ -26,13 +34,28 @@ router.get('/public', async (_request, response, next) => {
         AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }]
       },
       orderBy: [{ expiresAt: 'asc' }, { createdAt: 'desc' }],
-      select: { code: true, type: true, value: true, minimumOrder: true, maximumDiscount: true, expiresAt: true }
+      select: { code: true, type: true, value: true, minimumOrder: true, maximumDiscount: true, expiresAt: true, usageLimit: true, usedCount: true }
     });
-    return response.json({ data: coupons });
+    return response.json({ data: coupons.filter(isPublicCoupon).map(({ usageLimit: _usageLimit, usedCount: _usedCount, ...coupon }) => coupon) });
   } catch (error) { return next(error); }
 });
 
-router.patch('/:couponId', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => { try { const couponId = request.params.couponId; if (typeof couponId !== 'string') return response.status(400).json({ error: 'Invalid coupon ID' }); const input = createInput.partial().parse(request.body); if (input.type === 'PERCENTAGE' && input.value !== undefined && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' }); const coupon = await prisma.coupon.update({ where: { id: couponId }, data: { ...input, ...(input.expiresAt ? { expiresAt: endOfExpiryDay(input.expiresAt) } : {}), ...(input.code ? { code: input.code.toUpperCase() } : {}) } }); return response.json({ data: coupon }); } catch (error) { return next(error); } });
+router.patch('/:couponId', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => {
+  try {
+    const couponId = request.params.couponId;
+    if (typeof couponId !== 'string') return response.status(400).json({ error: 'Invalid coupon ID' });
+    const input = createInput.partial().parse(request.body);
+    if (input.type === 'PERCENTAGE' && input.value !== undefined && input.value > 100) return response.status(400).json({ error: 'Percentage coupons cannot exceed 100' });
+    const existing = await prisma.coupon.findUnique({ where: { id: couponId } });
+    if (!existing) return response.status(404).json({ error: 'Coupon not found' });
+    if (input.usageLimit === 1 && existing.usageLimit !== 1) return response.status(409).json({ error: 'Create a new one-time coupon to reveal its code once.' });
+    if (existing.usageLimit === 1 && (input.code !== undefined || (input.usageLimit !== undefined && input.usageLimit !== 1) || input.published === true)) {
+      return response.status(409).json({ error: 'One-time coupon codes cannot be changed or published after creation.' });
+    }
+    const coupon = await prisma.coupon.update({ where: { id: couponId }, data: { ...input, ...(input.expiresAt ? { expiresAt: endOfExpiryDay(input.expiresAt) } : {}), ...(input.code ? { code: input.code.toUpperCase() } : {}) } });
+    return response.json({ data: redactSingleUseCoupon(coupon) });
+  } catch (error) { return next(error); }
+});
 router.delete('/:couponId', requireAuth, requireRole('ADMIN'), requirePermission('coupons.manage'), async (request, response, next) => { try { const couponId = request.params.couponId; if (typeof couponId !== 'string') return response.status(400).json({ error: 'Invalid coupon ID' }); await prisma.coupon.update({ where: { id: couponId }, data: { active: false } }); return response.status(204).send(); } catch (error) { return next(error); } });
 
 router.post('/validate', requireAuth, async (request, response, next) => {
